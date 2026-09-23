@@ -1,0 +1,46 @@
+name: Turntable Recognition
+version: "0.2.0"
+slug: turntable_recognition
+description: Recognize turntable music and publish now-playing entities to Home Assistant.
+startup: application
+boot: auto
+init: false
+arch:
+  - amd64
+  - aarch64
+homeassistant_api: true
+audio: true
+map:
+  - type: media
+    read_only: true
+options:
+  provider: audd
+  input_mode: mock
+  audd_api_token: ""
+  test_audio_url: "https://audd.tech/example.mp3"
+  media_file: ""
+  sample_seconds: 12
+  simulated_start_seconds: 0
+  entity_prefix: turntable
+  max_requests_per_day: 100
+  max_requests_per_month: 1000
+  mock_artist: Fleetwood Mac
+  mock_title: Dreams
+  mock_album: Rumours
+  mock_year: "1977"
+schema:
+  provider: list(audd)
+  input_mode: list(mock|audio_url|media_file|simulated_usb)
+  audd_api_token: password
+  test_audio_url: str
+  media_file: str
+  sample_seconds: int(5,12)
+  simulated_start_seconds: int(0,86400)
+  entity_prefix: match(^[a-z0-9_]+$)
+  max_requests_per_day: int(1,10000)
+  max_requests_per_month: int(1,100000)
+  mock_artist: str
+  mock_title: str
+  mock_album: str
+  mock_year: str
+
