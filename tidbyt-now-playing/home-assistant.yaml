@@ -4,6 +4,9 @@ script:
     icon: mdi:album
     mode: restart
     sequence:
+      - variables:
+          tidbyt_arguments: >-
+            artist={{ state_attr('sensor.turntable_now_playing', 'artist') | default('Unknown artist', true) | replace(';', ',') | replace('=', '-') }};title={{ state_attr('sensor.turntable_now_playing', 'title') | default('Unknown song', true) | replace(';', ',') | replace('=', '-') }};album={{ state_attr('sensor.turntable_now_playing', 'album') | default('', true) | replace(';', ',') | replace('=', '-') }};year={{ state_attr('sensor.turntable_now_playing', 'year') | default('', true) | replace(';', ',') | replace('=', '-') }};artwork_url={{ state_attr('sensor.turntable_now_playing', 'artwork_url') | default('', true) | replace(';', '') }}
       - action: tidbytassistant.push
         data:
           contenttype: custom
@@ -11,8 +14,16 @@ script:
           publishtype: foreground
           devicename:
             - living_room
-          arguments: >-
-            artist={{ state_attr('sensor.turntable_now_playing', 'artist') | default('Unknown artist', true) | replace(';', ',') | replace('=', '-') }};title={{ state_attr('sensor.turntable_now_playing', 'title') | default('Unknown song', true) | replace(';', ',') | replace('=', '-') }};album={{ state_attr('sensor.turntable_now_playing', 'album') | default('', true) | replace(';', ',') | replace('=', '-') }};year={{ state_attr('sensor.turntable_now_playing', 'year') | default('', true) | replace(';', ',') | replace('=', '-') }};artwork_url={{ state_attr('sensor.turntable_now_playing', 'artwork_url') | default('', true) | replace(';', '') }}
+          arguments: "{{ tidbyt_arguments }};page=details"
+      - delay: "00:00:10"
+      - action: tidbytassistant.push
+        data:
+          contenttype: custom
+          customcontent: vinylnowplaying
+          publishtype: foreground
+          devicename:
+            - living_room
+          arguments: "{{ tidbyt_arguments }};page=album"
 
 automation:
   - alias: Turntable Recognition - Show New Song on Tidbyt
