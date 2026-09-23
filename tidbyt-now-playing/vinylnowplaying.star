@@ -6,8 +6,8 @@ HEADER = "#75bfff"
 ARTIST = "#ffffff"
 TITLE = "#35d6c7"
 DETAIL = "#9db4dc"
-PAGE_FRAMES = 100
-FRAME_DELAY = 100
+PAGE_FRAMES = 200
+FRAME_DELAY = 50
 
 
 def clean(value, fallback):
@@ -122,6 +122,7 @@ def main(config):
     year = clean(config.get("year"), "")
     artwork_url = clean(config.get("artwork_url"), "")
     background = clean(config.get("background"), BACKGROUND)
+    page = clean(config.get("page"), "details")
 
     detail = album
     if album != "" and year != "":
@@ -129,15 +130,17 @@ def main(config):
     elif year != "":
         detail = year
 
-    first_page = song_page(artist, title, detail, background)
-    second_page = cover_page(artwork_url, album, year, background)
+    if page == "album":
+        selected_page = cover_page(artwork_url, album, year, background)
+    else:
+        selected_page = song_page(artist, title, detail, background)
 
     return render.Root(
         delay = FRAME_DELAY,
         max_age = 900,
         show_full_animation = True,
         child = render.Animation(
-            children = [first_page] * PAGE_FRAMES + [second_page] * PAGE_FRAMES,
+            children = [selected_page] * PAGE_FRAMES,
         ),
     )
 
