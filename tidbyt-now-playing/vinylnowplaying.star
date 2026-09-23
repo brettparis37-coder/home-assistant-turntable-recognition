@@ -6,8 +6,8 @@ HEADER = "#75bfff"
 ARTIST = "#ffffff"
 TITLE = "#35d6c7"
 DETAIL = "#9db4dc"
-PAGE_FRAMES = 200
-FRAME_DELAY = 50
+PAGE_FRAMES = 400
+FRAME_DELAY = 25
 
 
 def clean(value, fallback):
