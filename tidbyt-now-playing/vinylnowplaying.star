@@ -6,7 +6,7 @@ HEADER = "#75bfff"
 ARTIST = "#ffffff"
 TITLE = "#35d6c7"
 DETAIL = "#9db4dc"
-PAGE_FRAMES = 50
+PAGE_FRAMES = 100
 FRAME_DELAY = 100
 
 
@@ -16,10 +16,10 @@ def clean(value, fallback):
     return value
 
 
-def song_page(artist, title, detail):
+def song_page(artist, title, detail, background):
     return render.Stack(
         children = [
-            render.Box(width = 64, height = 32, color = BACKGROUND),
+            render.Box(width = 64, height = 32, color = background),
             render.Padding(
                 pad = (2, 1, 0, 0),
                 child = render.Text(
@@ -62,12 +62,12 @@ def song_page(artist, title, detail):
     )
 
 
-def cover_page(artwork_url):
+def cover_page(artwork_url, album, year, background):
     if artwork_url == "":
         return render.Box(
             width = 64,
             height = 32,
-            color = BACKGROUND,
+            color = background,
             child = render.Text(
                 content = "NO COVER ART",
                 font = "CG-pixel-3x5-mono",
@@ -77,13 +77,41 @@ def cover_page(artwork_url):
 
     response = http.get(artwork_url, ttl_seconds = 3600)
     if response.status_code != 200:
-        return cover_page("")
+        return cover_page("", album, year, background)
 
-    return render.Box(
-        width = 64,
-        height = 32,
-        color = BACKGROUND,
-        child = render.Image(src = response.body(), width = 32, height = 32),
+    return render.Stack(
+        children = [
+            render.Box(width = 64, height = 32, color = background),
+            render.Image(src = response.body(), width = 32, height = 32),
+            render.Padding(
+                pad = (34, 2, 0, 0),
+                child = render.Text(
+                    content = "ALBUM",
+                    font = "CG-pixel-3x5-mono",
+                    color = HEADER,
+                ),
+            ),
+            render.Padding(
+                pad = (34, 10, 0, 0),
+                child = render.Marquee(
+                    width = 28,
+                    align = "start",
+                    child = render.Text(
+                        content = clean(album, "Unknown"),
+                        font = "CG-pixel-3x5-mono",
+                        color = ARTIST,
+                    ),
+                ),
+            ),
+            render.Padding(
+                pad = (34, 25, 0, 0),
+                child = render.Text(
+                    content = year,
+                    font = "CG-pixel-3x5-mono",
+                    color = DETAIL,
+                ),
+            ),
+        ],
     )
 
 
@@ -93,6 +121,7 @@ def main(config):
     album = clean(config.get("album"), "")
     year = clean(config.get("year"), "")
     artwork_url = clean(config.get("artwork_url"), "")
+    background = clean(config.get("background"), BACKGROUND)
 
     detail = album
     if album != "" and year != "":
@@ -100,8 +129,8 @@ def main(config):
     elif year != "":
         detail = year
 
-    first_page = song_page(artist, title, detail)
-    second_page = cover_page(artwork_url)
+    first_page = song_page(artist, title, detail, background)
+    second_page = cover_page(artwork_url, album, year, background)
 
     return render.Root(
         delay = FRAME_DELAY,
