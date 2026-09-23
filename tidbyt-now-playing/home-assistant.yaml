@@ -1,0 +1,37 @@
+script:
+  show_turntable_now_playing:
+    alias: Show Turntable Now Playing
+    icon: mdi:album
+    mode: restart
+    sequence:
+      - action: tidbytassistant.push
+        data:
+          contenttype: custom
+          customcontent: vinylnowplaying
+          publishtype: foreground
+          devicename:
+            - living_room
+          arguments: >-
+            artist={{ state_attr('sensor.turntable_now_playing', 'artist') | default('Unknown artist', true) | replace(';', ',') | replace('=', '-') }};title={{ state_attr('sensor.turntable_now_playing', 'title') | default('Unknown song', true) | replace(';', ',') | replace('=', '-') }};album={{ state_attr('sensor.turntable_now_playing', 'album') | default('', true) | replace(';', ',') | replace('=', '-') }};year={{ state_attr('sensor.turntable_now_playing', 'year') | default('', true) | replace(';', ',') | replace('=', '-') }};artwork_url={{ state_attr('sensor.turntable_now_playing', 'artwork_url') | default('', true) | replace(';', '') }}
+
+automation:
+  - alias: Turntable Recognition - Show New Song on Tidbyt
+    id: turntable_recognition_show_new_song_on_tidbyt
+    mode: restart
+    triggers:
+      - trigger: state
+        entity_id: sensor.turntable_now_playing
+    conditions:
+      - condition: template
+        value_template: >-
+          {{ trigger.to_state is not none
+             and trigger.to_state.state not in ['', 'unknown', 'unavailable']
+             and trigger.to_state.attributes.get('recognition_status') in ['mock', 'recognized'] }}
+      - condition: template
+        value_template: >-
+          {{ trigger.from_state is none
+             or trigger.from_state.state != trigger.to_state.state
+             or trigger.from_state.attributes.get('artist') != trigger.to_state.attributes.get('artist') }}
+    actions:
+      - action: script.show_turntable_now_playing
+
