@@ -36,8 +36,9 @@ be used for the first end-to-end test.
 The Home Assistant script pushes song details, waits ten seconds, then pushes
 the album view separately. Use `page=details` or `page=album` when testing a
 single view from Developer Tools. The album view has a 32×32 cover on the left
-with a scrolling album name and year on the right. The frame delay is 50 ms,
-making scrolling about twice as fast as the earlier 100 ms version. Pixlet
+with a scrolling album name and year on the right. The frame delay is 25 ms,
+making scrolling about twice as fast as the earlier 50 ms version while
+keeping each page's animation at ten seconds. Pixlet
 scales the cover with nearest-neighbor sampling, which keeps the image sharp on
 the pixel display. If no artwork URL is available, the second view shows
 `NO COVER ART`. The optional `background` argument applies to both views; it
