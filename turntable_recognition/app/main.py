@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import json
+import calendar
 import os
 import re
 import subprocess
@@ -151,9 +152,10 @@ class AudDProvider(Provider):
 
 
 class UsageLimiter:
-    def __init__(self, daily_limit: int, monthly_limit: int) -> None:
+    def __init__(self, daily_limit: int, monthly_limit: int, billing_cycle_day: int = 1) -> None:
         self.daily_limit = daily_limit
         self.monthly_limit = monthly_limit
+        self.billing_cycle_day = max(1, min(28, billing_cycle_day))
 
     def _read(self) -> dict[str, Any]:
         try:
@@ -161,34 +163,79 @@ class UsageLimiter:
         except (FileNotFoundError, json.JSONDecodeError):
             return {}
 
+    def cycle(self, now: datetime | None = None) -> tuple[str, datetime, datetime]:
+        now = now or datetime.now(timezone.utc)
+        if now.day >= self.billing_cycle_day:
+            start = now.replace(day=self.billing_cycle_day, hour=0, minute=0, second=0, microsecond=0)
+        else:
+            year, month = now.year, now.month - 1
+            if month == 0:
+                year, month = year - 1, 12
+            start = now.replace(year=year, month=month, day=self.billing_cycle_day,
+                                hour=0, minute=0, second=0, microsecond=0)
+        year, month = start.year, start.month + 1
+        if month == 13:
+            year, month = year + 1, 1
+        end_day = min(self.billing_cycle_day, calendar.monthrange(year, month)[1])
+        end = start.replace(year=year, month=month, day=end_day)
+        return start.date().isoformat(), start, end
+
     def counts(self) -> tuple[int, int]:
         usage = self._read()
         now = datetime.now(timezone.utc)
-        return int(usage.get(now.date().isoformat(), 0)), int(usage.get(now.strftime("%Y-%m"), 0))
+        cycle_key, _, _ = self.cycle(now)
+        cycles = usage.get("cycles") or {}
+        cycle_count = cycles.get(cycle_key)
+        if cycle_count is None:
+            cycle_count = usage.get(now.strftime("%Y-%m"), 0)
+        return int(usage.get(now.date().isoformat(), 0)), int(cycle_count)
+
+    def details(self) -> dict[str, Any]:
+        day_count, cycle_count = self.counts()
+        _, cycle_start, cycle_end = self.cycle()
+        remaining = max(0, self.monthly_limit - cycle_count)
+        return {
+            "requests_today": day_count,
+            "requests_this_cycle": cycle_count,
+            "allowance": self.monthly_limit,
+            "remaining": remaining,
+            "usage_percent": round(cycle_count * 100 / self.monthly_limit, 1),
+            "cycle_start": cycle_start.date().isoformat(),
+            "cycle_end": cycle_end.date().isoformat(),
+            "limit_reached": cycle_count >= self.monthly_limit,
+            "source": "local_request_guard",
+        }
 
     def consume(self) -> tuple[int, int]:
         usage = self._read()
         now = datetime.now(timezone.utc)
         day_key = now.date().isoformat()
-        month_key = now.strftime("%Y-%m")
+        cycle_key, _, cycle_end = self.cycle(now)
         day_count = int(usage.get(day_key, 0))
-        month_count = int(usage.get(month_key, 0))
+        cycles = usage.get("cycles") or {}
+        cycle_count = cycles.get(cycle_key)
+        if cycle_count is None:
+            cycle_count = int(usage.get(now.strftime("%Y-%m"), 0))
+        cycle_count = int(cycle_count)
         if day_count >= self.daily_limit:
             raise RecognitionError(f"Daily request limit reached ({self.daily_limit})")
-        if month_count >= self.monthly_limit:
-            raise RecognitionError(f"Monthly request limit reached ({self.monthly_limit})")
+        if cycle_count >= self.monthly_limit:
+            raise RecognitionError(
+                f"AudD API limit reached ({self.monthly_limit}); refreshes {cycle_end.date().isoformat()}"
+            )
         day_count += 1
-        month_count += 1
-        usage = {key: value for key, value in usage.items() if key in {day_key, month_key}}
+        cycle_count += 1
+        usage = {key: value for key, value in usage.items() if key == day_key}
         usage[day_key] = day_count
-        usage[month_key] = month_count
+        usage["cycles"] = {cycle_key: cycle_count}
         USAGE_PATH.write_text(json.dumps(usage, indent=2), encoding="utf-8")
-        return day_count, month_count
+        return day_count, cycle_count
 
 
 class HomeAssistantPublisher:
-    def __init__(self, prefix: str) -> None:
+    def __init__(self, prefix: str, limiter: UsageLimiter | None = None) -> None:
         self.prefix = prefix
+        self.limiter = limiter
         token = os.environ.get("SUPERVISOR_TOKEN", "")
         self.headers = {
             "Authorization": f"Bearer {token}",
@@ -248,6 +295,33 @@ class HomeAssistantPublisher:
                 "last_error": error,
             },
         )
+        if self.limiter:
+            details = self.limiter.details()
+            display_status = "limit reached" if details["limit_reached"] else "available"
+            self.set_state(
+                "audd_usage",
+                str(details["requests_this_cycle"]),
+                {
+                    "friendly_name": "AudD Requests This Billing Cycle",
+                    "icon": "mdi:chart-donut",
+                    "unit_of_measurement": "requests",
+                    "state_class": "total",
+                    "status": display_status,
+                    **details,
+                },
+            )
+            self.set_state(
+                "audd_requests_remaining",
+                str(details["remaining"]),
+                {
+                    "friendly_name": "AudD Requests Remaining",
+                    "icon": "mdi:counter",
+                    "unit_of_measurement": "requests",
+                    "state_class": "measurement",
+                    "cycle_end": details["cycle_end"],
+                    "status": display_status,
+                },
+            )
 
 
 def load_options() -> dict[str, Any]:
@@ -305,11 +379,12 @@ def capture_simulated_usb(options: dict[str, Any]) -> str:
 def main() -> int:
     options = load_options()
     mode = options.get("input_mode", "mock")
-    publisher = HomeAssistantPublisher(options.get("entity_prefix", "turntable"))
     limiter = UsageLimiter(
         int(options.get("max_requests_per_day", 100)),
         int(options.get("max_requests_per_month", 1000)),
+        int(options.get("billing_cycle_day", 1)),
     )
+    publisher = HomeAssistantPublisher(options.get("entity_prefix", "turntable"), limiter)
     day_count, month_count = limiter.counts()
     if mode == "usb_auto":
         automatic = AutomaticRecognition(options, publisher, limiter, AudDProvider)
@@ -354,7 +429,8 @@ def main() -> int:
         message = str(exc)
         print(f"Recognition error: {message}", file=sys.stderr, flush=True)
         try:
-            publisher.publish_status("error", day_count, month_count, message)
+            status = "api_limit_reached" if "AudD API limit reached" in message else "error"
+            publisher.publish_status(status, day_count, month_count, message)
         except Exception as publish_exc:
             print(f"Could not publish error status: {publish_exc}", file=sys.stderr, flush=True)
 
@@ -364,3 +440,4 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
+
