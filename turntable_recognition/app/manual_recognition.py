@@ -93,7 +93,8 @@ class ManualRecognition:
             print(f"Manual recognition error: {exc}", file=sys.stderr, flush=True)
             try:
                 day, month = self.limiter.counts()
-                self.publisher.publish_status("error", day, month, str(exc))
+                status = "api_limit_reached" if "AudD API limit reached" in str(exc) else "error"
+                self.publisher.publish_status(status, day, month, str(exc))
             except Exception as publish_error:
                 print(f"Could not publish recognition error: {publish_error}", file=sys.stderr, flush=True)
         finally:
@@ -101,3 +102,4 @@ class ManualRecognition:
                 self.busy = False
                 self.recording = False
                 self.data.clear()
+
