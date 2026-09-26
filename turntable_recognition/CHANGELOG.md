@@ -1,3 +1,9 @@
+# 0.6.0
+
+- Track recognition requests against the configured AudD billing-cycle day.
+- Publish numeric usage and remaining-request sensors for Home Assistant dashboards.
+- Stop recognition before the configured allowance and report when access refreshes.
+
 # 0.5.0
 
 - Request MusicBrainz metadata with each AudD match and prefer an official original album over singles, compilations, deluxe editions, and reissues.
@@ -30,3 +36,4 @@
 # 0.2.0
 
 - Add simulated USB capture from a Media file with FFmpeg.
+
