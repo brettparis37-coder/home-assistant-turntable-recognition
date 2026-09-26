@@ -1,3 +1,11 @@
+# 0.4.0
+
+- Add usb_auto playback sessions with configurable start/stop thresholds and hold times.
+- Recognize automatically, estimate the next check from song duration and match position, and retry same-song matches after a configurable delay.
+- Clear now-playing metadata on quiet input or USB disconnect; ignore stale responses from ended sessions.
+- Bound capture memory, prevent overlapping requests, back off failures, and honor daily/monthly limits.
+- Publish playback state and next recognition time for dashboards. No Tidbyt changes.
+
 # 0.3.1
 
 - Add manual recognition from live USB with a bounded sample and temporary WAV cleanup.

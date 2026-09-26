@@ -1,5 +1,5 @@
 name: Turntable Recognition
-version: "0.3.1"
+version: "0.4.0"
 slug: turntable_recognition
 description: Recognize turntable music and publish now-playing entities to Home Assistant.
 startup: application
@@ -20,6 +20,13 @@ options:
   audio_source: auto
   audio_threshold_dbfs: -50
   audio_update_seconds: 1
+  playback_start_dbfs: -30
+  playback_stop_dbfs: -35
+  playback_start_seconds: 2
+  playback_stop_seconds: 15
+  same_song_retry_seconds: 15
+  fallback_check_seconds: 60
+  no_match_retry_seconds: 30
   audd_api_token: ""
   test_audio_url: "https://audd.tech/example.mp3"
   media_file: ""
@@ -34,7 +41,14 @@ options:
   mock_year: "1977"
 schema:
   provider: list(audd)
-  input_mode: list(mock|audio_url|media_file|simulated_usb|usb_meter)
+  input_mode: list(mock|audio_url|media_file|simulated_usb|usb_meter|usb_auto)
+  playback_start_dbfs: int(-100,0)
+  playback_stop_dbfs: int(-100,0)
+  playback_start_seconds: int(1,30)
+  playback_stop_seconds: int(1,120)
+  same_song_retry_seconds: int(10,300)
+  fallback_check_seconds: int(15,600)
+  no_match_retry_seconds: int(15,300)
   audio_source: str
   audio_threshold_dbfs: int(-100,0)
   audio_update_seconds: int(1,10)

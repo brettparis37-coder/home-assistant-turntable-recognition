@@ -1,4 +1,35 @@
-# USB audio meter and manual recognition (0.3.1)
+# Automatic USB recognition (0.4.0)
+
+Set `input_mode: usb_auto` to enable automatic recognition. Keep the existing
+audio source, AudD token, and request limits. Save and restart the app.
+
+Defaults (all configurable in Options):
+
+- Start above `playback_start_dbfs: -30` for `playback_start_seconds: 2` seconds.
+- End below `playback_stop_dbfs: -35` for `playback_stop_seconds: 15` seconds.
+- Capture `sample_seconds` of contiguous audio, then recognize once.
+- For a new song, estimate its end from provider duration and match position,
+  adjusted for elapsed capture/request time, with a 3-second allowance.
+- Same song: retry after `same_song_retry_seconds: 15` seconds.
+- Missing timing: check after `fallback_check_seconds: 60` seconds.
+- No match/errors: start at `no_match_retry_seconds: 30`, double up to 300 seconds.
+
+Timing is approximate: vinyl versions, speed differences, and provider match
+positions can vary. Short quiet passages pause sampling; sustained quiet clears
+all current track metadata and cancels pending checks. A request already sent
+may complete, but a response from an ended session cannot repopulate the display.
+Local level monitoring continues during requests. One bounded sample and one
+request are allowed at a time; temporary WAVs are deleted. Limits prevent new
+calls and are checked locally once per minute until the UTC counters reset.
+
+`sensor.turntable_playback_state` reports playing/idle and attributes
+`next_check_at`, `check_reason`, `quiet`, and `request_active`.
+`sensor.turntable_now_playing` contains title, artist, album, artwork, year,
+`duration_seconds`, and `position_seconds`, and becomes Nothing playing when idle.
+The playback state should gate dashboard metadata during startup/disconnection.
+This mode does not consume manual stdin commands or push to Tidbyt.
+
+## USB audio meter and manual recognition
 
 Use this mode to test the UFO202 line input locally before enabling recognition.
 Set the UFO202 to LINE when feeding it from a separate phono preamp.
@@ -55,5 +86,4 @@ The graph shows the last 15 minutes; the entities below it show live readings.
 The display window does not control Recorder retention: detailed numeric
 history follows your Home Assistant Recorder settings (10 days by default).
 
-Other input modes continue to work as in 0.2.0. Continuous recognition and
-Tidbyt takeover based on this signal threshold are a later step.
+Other input modes continue to work. Tidbyt takeover remains a separate step.

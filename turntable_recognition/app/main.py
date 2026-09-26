@@ -17,6 +17,7 @@ from typing import Any
 import requests
 from audio_meter import run_meter
 from manual_recognition import ManualRecognition
+from auto_recognition import AutomaticRecognition, timing
 
 
 OPTIONS_PATH = Path("/data/options.json")
@@ -38,6 +39,8 @@ class Track:
     spotify_url: str = ""
     apple_music_url: str = ""
     provider: str = ""
+    duration_seconds: float | None = None
+    position_seconds: float | None = None
 
 
 class RecognitionError(RuntimeError):
@@ -100,6 +103,7 @@ class AudDProvider(Provider):
             artwork_url = apple_artwork.replace("{w}", "600").replace("{h}", "600")
 
         year_match = re.match(r"^(\d{4})", release_date)
+        duration, position = timing(spotify.get("duration_ms") or apple_music.get("durationInMillis"), result.get("timecode"))
         return Track(
             artist=str(result.get("artist") or ""),
             title=str(result.get("title") or ""),
@@ -113,6 +117,8 @@ class AudDProvider(Provider):
             spotify_url=str((spotify.get("external_urls") or {}).get("spotify") or ""),
             apple_music_url=str(apple_music.get("url") or ""),
             provider=self.name,
+            duration_seconds=duration,
+            position_seconds=position,
         )
 
 
@@ -194,6 +200,14 @@ class HomeAssistantPublisher:
             self.set_state(suffix, state, {"friendly_name": name, "icon": icon})
         self.publish_status(status, day_count, month_count)
 
+    def clear_track(self) -> None:
+        self.set_state("now_playing", "Nothing playing", {
+            "friendly_name": "Turntable Now Playing", "icon": "mdi:album",
+            "artist": "", "title": "", "album": "", "year": "", "artwork_url": "",
+        })
+        for suffix in ("artist", "title", "album", "year"):
+            self.set_state(suffix, "unknown", {"friendly_name": "Turntable " + suffix.title()})
+
     def publish_status(self, status: str, day_count: int, month_count: int, error: str = "") -> None:
         self.set_state(
             "recognition_status",
@@ -269,6 +283,11 @@ def main() -> int:
         int(options.get("max_requests_per_month", 1000)),
     )
     day_count, month_count = limiter.counts()
+    if mode == "usb_auto":
+        automatic = AutomaticRecognition(options, publisher, limiter, AudDProvider)
+        automatic.start()
+        run_meter(options, publisher, automatic=automatic)
+        return 0
     if mode == "usb_meter":
         manual = ManualRecognition(options, publisher, limiter, AudDProvider)
         manual.start()
