@@ -67,6 +67,7 @@ class AutomaticRecognition:
         self.reason = "idle"
         self.retry = int(options.get("same_song_retry_seconds", 15))
         self.fallback = int(options.get("fallback_check_seconds", 60))
+        self.song_end_buffer = int(options.get("song_end_buffer_seconds", 3))
 
     def status(self, status, error=""):
         self.publisher.publish_status(status, *self.limiter.counts(), error)
@@ -85,6 +86,7 @@ class AutomaticRecognition:
             "start_threshold_dbfs": self.detector.start_db,
             "stop_threshold_dbfs": self.detector.stop_db,
             "same_song_retry_seconds": self.retry,
+            "song_end_buffer_seconds": self.song_end_buffer,
         }
         if attributes != self.last_session:
             self.publisher.set_state("playback_state", "playing" if self.detector.active else "idle", attributes)
@@ -117,6 +119,17 @@ class AutomaticRecognition:
             self.reason = "new_session"
             self.status("listening")
         self.drain_result(now)
+        if (self.detector.active and self.detector.quiet and self.data is None
+                and not self.busy and self.due is not None and now >= self.due):
+            # The estimated song has ended and the input is quiet. End this
+            # session immediately instead of spending a request on silence.
+            # A new request now requires the normal start threshold again.
+            self.detector.active = False
+            self.detector.elapsed = 0.0
+            self.end()
+            self.reason = "waiting_for_audio"
+            self.publish_session()
+            return
         if self.detector.active and not self.detector.quiet:
             if self.data is None and not self.busy and self.due is not None and now >= self.due:
                 day, month = self.limiter.counts()
@@ -194,7 +207,8 @@ class AutomaticRecognition:
             self.due = now + self.retry
             self.reason = "same_song_retry"
         elif track.duration_seconds is not None and track.position_seconds is not None:
-            self.due = max(now + self.retry, started + track.duration_seconds - track.position_seconds + 3)
+            remaining = track.duration_seconds - track.position_seconds
+            self.due = now + max(self.retry, remaining + self.song_end_buffer)
             self.reason = "estimated_song_end"
         else:
             self.due = now + self.fallback
