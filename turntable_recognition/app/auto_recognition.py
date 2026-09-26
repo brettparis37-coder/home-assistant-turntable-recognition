@@ -123,7 +123,12 @@ class AutomaticRecognition:
                 if day >= self.limiter.daily_limit or month >= self.limiter.monthly_limit:
                     self.due = now + 60
                     self.reason = "request_limit"
-                    self.status("request_limit")
+                    details = self.limiter.details()
+                    if month >= self.limiter.monthly_limit:
+                        message = f"AudD API limit reached; refreshes {details['cycle_end']}"
+                        self.status("api_limit_reached", message)
+                    else:
+                        self.status("daily_limit_reached", "Daily safety limit reached")
                 else:
                     self.data = bytearray()
                     self.capture_start = now - len(pcm) / 64000
@@ -175,7 +180,13 @@ class AutomaticRecognition:
             delay = min(300, int(self.options.get("no_match_retry_seconds", 30)) * 2 ** min(self.failures - 1, 4))
             self.due = now + delay
             self.reason = "retry_after_no_match" if "No song was recognized" in error else "retry_after_error"
-            self.status("no_match" if "No song was recognized" in error else "error", error)
+            if "AudD API limit reached" in error:
+                status = "api_limit_reached"
+            elif "No song was recognized" in error:
+                status = "no_match"
+            else:
+                status = "error"
+            self.status(status, error)
             return
         self.failures = 0
         identity = tuple(" ".join(value.casefold().split()) for value in (track.artist, track.title))
@@ -191,3 +202,4 @@ class AutomaticRecognition:
         self.identity = identity
         self.publisher.publish_track(track, "recognized", *self.limiter.counts())
         print(f"Automatic recognition: {track.artist} - {track.title}; {self.reason}; next check in {round(self.due - now)}s", flush=True)
+
