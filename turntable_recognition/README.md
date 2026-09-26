@@ -1,19 +1,17 @@
 # Turntable Recognition
 
-Recognizes music and publishes structured now-playing data to Home Assistant.
+Version 0.4.0 supports automatic recognition from live USB audio.
 
-Version 0.3.1 supports:
+Set `input_mode: usb_auto` and `audio_source: auto`, save and restart. Keep your existing AudD token and request limits.
 
-- Live UFO202 USB Audio CODEC monitoring with average and peak dBFS sensors and automatic input reconnection.
-- Manual live USB recognition: send `{"command":"recognize"}` through Home Assistant app stdin. Each accepted command captures the next short sample and makes one AudD request. Overlapping commands are ignored and temporary samples are removed.
-- Artist, song, album, year, artwork, recognition status, and request-count entities for dashboards and Tidbyt.
-- Mock metadata, public audio URL recognition, Media-file recognition, and simulated USB samples from Media files.
-- Daily and monthly request limits.
+- Local RMS and peak audio monitoring with automatic USB reconnection.
+- Playback starts above -30 dBFS for 2 seconds and ends below -35 dBFS for 15 seconds (configurable).
+- Initial recognition captures a short sample. New matches schedule the next check near estimated song completion using duration and match position.
+- Same-song matches retry after 15 seconds; missing timing falls back to 60 seconds. No-match/error retries back off from 30 to 300 seconds.
+- Idle sessions clear now-playing metadata. Late responses cannot revive ended sessions.
+- Bounded audio samples, one request at a time, temporary-file cleanup, and daily/monthly request limits.
+- Artist, title, album, year, artwork, playback state, and next-check time for dashboards.
 
-Use `input_mode: usb_meter` and `audio_source: auto` for live input. Monitoring alone makes no AudD requests. Automatic recognition and retry scheduling are not enabled.
+See Documentation for options. Legacy manual USB, mock, URL, file, and simulated USB modes remain available. Automatic Tidbyt takeover is a separate future step.
 
-See the Documentation tab for the Recognize now button and options. `examples/usb-audio-dashboard.yaml` contains a meter and graph card.
-
-Use LINE on the UFO202 when feeding it from an external phono preamp. dBFS measures the captured signal, not room loudness or Sonos volume. The graph displays 15 minutes while detailed numeric history follows Home Assistant Recorder settings.
-
-Automatic playback detection, track-change scheduling, and continuous Tidbyt takeover are future work.
+Use LINE on the UFO202 when feeding it from an external phono preamp. dBFS measures the captured signal, not room loudness or Sonos volume. A 15-minute graph window does not change Home Assistant Recorder retention.
