@@ -47,6 +47,48 @@
                 name: Last error
             grid_options:
               columns: full
+          - type: gauge
+            entity: sensor.turntable_audd_usage
+            name: AudD billing-cycle usage
+            min: 0
+            max: 1000
+            needle: true
+            severity:
+              green: 0
+              yellow: 750
+              red: 900
+            grid_options:
+              columns: full
+          - type: history-graph
+            title: AudD requests — current cycle
+            hours_to_show: 720
+            entities:
+              - entity: sensor.turntable_audd_usage
+                name: Used
+            grid_options:
+              columns: full
+          - type: entities
+            title: AudD plan usage
+            entities:
+              - entity: sensor.turntable_audd_usage
+                name: Requests used
+              - entity: sensor.turntable_audd_requests_remaining
+                name: Requests remaining
+              - type: attribute
+                entity: sensor.turntable_audd_usage
+                attribute: usage_percent
+                name: Usage percent
+                suffix: "%"
+              - type: attribute
+                entity: sensor.turntable_audd_usage
+                attribute: cycle_end
+                name: Refreshes
+              - type: attribute
+                entity: sensor.turntable_audd_usage
+                attribute: status
+                name: API status
+            grid_options:
+              columns: full
           - type: markdown
             content: Press **Recognize now** while a record plays. One press captures a short USB sample and sends one AudD request. Automatic recognition is paused.
             grid_options:
@@ -90,4 +132,5 @@
                 name: Capture status
             grid_options:
               columns: full
+
 
