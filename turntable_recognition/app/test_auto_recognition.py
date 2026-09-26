@@ -22,6 +22,8 @@ class Limiter:
     def consume(self):
         self.used += 1
         return self.counts()
+    def details(self):
+        return {"cycle_end": "2026-10-25"}
 
 
 def track(title="First", duration=240, position=60):
@@ -58,12 +60,22 @@ class AutoTests(unittest.TestCase):
 
     def test_new_same_and_new_again_schedule(self):
         self.result(track())
-        self.assertEqual(self.worker.due, 263)
+        self.assertEqual(self.worker.due, 283)
         self.now = 265
         self.result(track())
         self.assertEqual(self.worker.due, 280)
         self.result(track("Second", 400, 10))
-        self.assertEqual(self.worker.due, 473)
+        self.assertEqual(self.worker.due, 658)
+
+    def test_quiet_at_estimated_end_returns_to_idle_without_request(self):
+        self.worker.detector.active = True
+        self.worker.detector.quiet = True
+        self.worker.due = self.now
+        self.worker.feed(bytes(64000), -40)
+        self.assertFalse(self.worker.detector.active)
+        self.assertEqual(self.worker.reason, "waiting_for_audio")
+        self.assertEqual(self.limiter.used, 0)
+        self.assertIsNone(self.worker.due)
 
     def test_missing_metadata_and_bad_timing(self):
         self.result(track(duration=None, position=None))
@@ -119,3 +131,4 @@ class AutoTests(unittest.TestCase):
 
 
 if __name__ == '__main__': unittest.main()
+
