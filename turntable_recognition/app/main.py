@@ -16,6 +16,7 @@ from typing import Any
 
 import requests
 from audio_meter import run_meter
+from manual_recognition import ManualRecognition
 
 
 OPTIONS_PATH = Path("/data/options.json")
@@ -263,14 +264,16 @@ def main() -> int:
     options = load_options()
     mode = options.get("input_mode", "mock")
     publisher = HomeAssistantPublisher(options.get("entity_prefix", "turntable"))
-    if mode == "usb_meter":
-        run_meter(options, publisher)
-        return 0
     limiter = UsageLimiter(
         int(options.get("max_requests_per_day", 100)),
         int(options.get("max_requests_per_month", 1000)),
     )
     day_count, month_count = limiter.counts()
+    if mode == "usb_meter":
+        manual = ManualRecognition(options, publisher, limiter, AudDProvider)
+        manual.start()
+        run_meter(options, publisher, manual)
+        return 0
 
     try:
         if mode == "mock":

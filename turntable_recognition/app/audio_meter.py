@@ -76,7 +76,7 @@ def stop_process(process) -> None:
     process.stdout.close()
 
 
-def run_meter(options: dict, publisher) -> None:
+def run_meter(options: dict, publisher, manual=None) -> None:
     threshold = float(options.get("audio_threshold_dbfs", -50))
     configured = str(options.get("audio_source", "auto"))
     interval = int(options.get("audio_update_seconds", 1))
@@ -88,7 +88,7 @@ def run_meter(options: dict, publisher) -> None:
         process = None
         try:
             source = select_source(configured)
-            print(f"Monitoring USB input: {source}; no recognition API requests", flush=True)
+            print(f"Monitoring USB input: {source}; recognition only on manual command", flush=True)
             with tempfile.TemporaryFile() as errors:
                 process = subprocess.Popen([
                     "ffmpeg", "-hide_banner", "-loglevel", "error", "-nostdin",
@@ -97,8 +97,11 @@ def run_meter(options: dict, publisher) -> None:
                 ], stdout=subprocess.PIPE, stderr=errors, bufsize=0)
                 try:
                     while True:
-                        rms, peak = levels(read_window(process, 16000 * 2 * 2 * interval,
-                                                       max(10, interval + 5)))
+                        pcm = read_window(process, 16000 * 2 * 2 * interval,
+                                          max(10, interval + 5))
+                        if manual is not None:
+                            manual.feed(pcm)
+                        rms, peak = levels(pcm)
                         publisher.set_state("audio_level", str(rms), {
                             **base_attributes, "friendly_name": "Turntable Audio Level",
                             "audio_source": source,
@@ -121,6 +124,8 @@ def run_meter(options: dict, publisher) -> None:
                     detail = errors.read().decode("utf-8", errors="replace").strip()[-1000:]
                     raise RuntimeError(f"{exc}{': ' + detail if detail else ''}") from exc
         except Exception as exc:
+            if manual is not None:
+                manual.disconnect()
             if process is not None:
                 stop_process(process)
             message = str(exc)
