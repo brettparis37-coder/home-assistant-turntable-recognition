@@ -1,4 +1,4 @@
-# Automatic USB recognition (0.5.0)
+# Automatic USB recognition (0.7.0)
 
 Recognition requests now include Spotify, Apple Music, and MusicBrainz metadata.
 The app prefers an official original album for display, ranks deluxe/reissue and
@@ -17,7 +17,9 @@ Defaults (all configurable in Options):
 - End below `playback_stop_dbfs: -35` for `playback_stop_seconds: 15` seconds.
 - Capture `sample_seconds` of contiguous audio, then recognize once.
 - For a new song, estimate its end from provider duration and match position,
-  adjusted for elapsed capture/request time, with a 3-second allowance.
+  starting when recognition completes, then wait `song_end_buffer_seconds: 3`.
+- If the input is quiet when that timer expires, return to idle without an API
+  request. Recognition resumes only after the start threshold is crossed again.
 - Same song: retry after `same_song_retry_seconds: 15` seconds.
 - Missing timing: check after `fallback_check_seconds: 60` seconds.
 - No match/errors: start at `no_match_retry_seconds: 30`, double up to 300 seconds.
@@ -95,3 +97,4 @@ The display window does not control Recorder retention: detailed numeric
 history follows your Home Assistant Recorder settings (10 days by default).
 
 Other input modes continue to work. Tidbyt takeover remains a separate step.
+
