@@ -1,0 +1,93 @@
+      - type: grid
+        cards:
+          - type: heading
+            heading: Turntable recognition
+            heading_style: title
+            icon: mdi:record-player
+          - type: button
+            name: Recognize now
+            icon: mdi:music-note-search
+            tap_action:
+              action: perform-action
+              perform_action: hassio.app_stdin
+              data:
+                app: 2de1fd4c_turntable_recognition
+                input:
+                  command: recognize
+            grid_options:
+              columns: full
+              rows: 2
+          - type: markdown
+            content: |
+              ### Last recognized song
+              **{{ state_attr('sensor.turntable_now_playing', 'title') or 'No song recognized yet' }}**
+
+              {{ state_attr('sensor.turntable_now_playing', 'artist') or '' }}
+
+              {{ state_attr('sensor.turntable_now_playing', 'album') or '' }} · {{ state_attr('sensor.turntable_now_playing', 'year') or '' }}
+
+              {% set cover = state_attr('sensor.turntable_now_playing', 'artwork_url') %}
+              {% if cover %}
+              ![Album artwork]({{ cover }})
+              {% endif %}
+            grid_options:
+              columns: full
+          - type: entities
+            title: Recognition status
+            entities:
+              - entity: sensor.turntable_recognition_status
+                name: Status
+              - type: attribute
+                entity: sensor.turntable_recognition_status
+                attribute: requests_today
+                name: Requests today
+              - type: attribute
+                entity: sensor.turntable_recognition_status
+                attribute: last_error
+                name: Last error
+            grid_options:
+              columns: full
+          - type: markdown
+            content: Press **Recognize now** while a record plays. One press captures a short USB sample and sends one AudD request. Automatic recognition is paused.
+            grid_options:
+              columns: full
+      - type: grid
+        cards:
+          - type: heading
+            heading: Turntable USB input
+            heading_style: title
+            icon: mdi:waveform
+          - type: gauge
+            entity: sensor.turntable_audio_level
+            name: Input level (dBFS)
+            min: -100
+            max: 0
+            needle: true
+            severity:
+              green: -100
+              yellow: -12
+              red: -3
+            grid_options:
+              columns: full
+          - type: history-graph
+            title: Input — last 15 minutes
+            hours_to_show: 0.25
+            entities:
+              - entity: sensor.turntable_audio_level
+                name: Average
+              - entity: sensor.turntable_audio_peak
+                name: Peak
+            grid_options:
+              columns: full
+          - type: entities
+            title: Live input metrics
+            entities:
+              - entity: sensor.turntable_audio_level
+                name: Average (dBFS)
+              - entity: sensor.turntable_audio_peak
+                name: Peak (dBFS)
+              - entity: sensor.turntable_audio_input_status
+                name: Capture status
+            grid_options:
+              columns: full
+
