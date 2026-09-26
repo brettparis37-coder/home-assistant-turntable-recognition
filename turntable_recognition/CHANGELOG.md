@@ -1,3 +1,9 @@
+# 0.7.0
+
+- Start the song-end timer when recognition completes, then wait the configured three-second buffer.
+- If the input is quiet when that timer expires, return to idle without making an AudD request.
+- Require the normal audio start threshold before recognition resumes from that idle state.
+
 # 0.6.0
 
 - Track recognition requests against the configured AudD billing-cycle day.
