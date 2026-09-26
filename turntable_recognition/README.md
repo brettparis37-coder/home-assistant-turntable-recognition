@@ -2,18 +2,18 @@
 
 Recognizes music and publishes structured now-playing data to Home Assistant.
 
-Version 0.3.0 supports:
+Version 0.3.1 supports:
 
-- Live USB input monitoring from a UFO202 USB Audio CODEC, with RMS and peak dBFS sensors, a configurable signal threshold, and automatic reconnection.
-- A Home Assistant dashboard graph and live readings. Use `input_mode: usb_meter` and `audio_source: auto`; this mode processes audio locally and makes no recognition API requests.
-- Mock metadata for dashboard and Tidbyt development.
-- AudD recognition from a public audio URL or a file in Home Assistant's Media directory.
-- Simulated USB capture that uses FFmpeg to cut a Media file into a short WAV sample.
-- Daily and monthly recognition request limits.
-- A provider interface that allows another provider to be added later.
+- Live UFO202 USB Audio CODEC monitoring with average and peak dBFS sensors and automatic input reconnection.
+- Manual live USB recognition: send `{"command":"recognize"}` through Home Assistant app stdin. Each accepted command captures the next short sample and makes one AudD request. Overlapping commands are ignored and temporary samples are removed.
+- Artist, song, album, year, artwork, recognition status, and request-count entities for dashboards and Tidbyt.
+- Mock metadata, public audio URL recognition, Media-file recognition, and simulated USB samples from Media files.
+- Daily and monthly request limits.
 
-See the Documentation tab for USB meter options and `examples/usb-audio-dashboard.yaml` in the repository for a dashboard card.
+Use `input_mode: usb_meter` and `audio_source: auto` for live input. Monitoring alone makes no AudD requests. Automatic recognition and retry scheduling are not enabled.
 
-Use LINE on the UFO202 when its input comes from an external phono preamp. dBFS measures the captured signal, not room sound pressure or Sonos volume.
+See the Documentation tab for the Recognize now button and options. `examples/usb-audio-dashboard.yaml` contains a meter and graph card.
 
-Automatic recognition from live USB and continuous track-change detection remain future work.
+Use LINE on the UFO202 when feeding it from an external phono preamp. dBFS measures the captured signal, not room loudness or Sonos volume. The graph displays 15 minutes while detailed numeric history follows Home Assistant Recorder settings.
+
+Automatic playback detection, track-change scheduling, and continuous Tidbyt takeover are future work.
