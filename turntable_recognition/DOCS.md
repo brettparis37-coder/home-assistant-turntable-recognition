@@ -1,67 +1,33 @@
-# Configuration and testing
+# USB audio meter (0.3.0)
 
-## Entities
+Use this mode to test the UFO202 line input locally before enabling recognition.
+Set the UFO202 to LINE when feeding it from a separate phono preamp.
 
-The app publishes:
+In the app Configuration, set `input_mode: usb_meter`, `audio_source: auto`,
+`audio_threshold_dbfs: -50`, and `audio_update_seconds: 1`. Save and restart.
+The automatic source selector requires one Burr-Brown USB Audio CODEC capture
+source. It never chooses speaker playback monitor sources or onboard audio.
+If selection fails, Log lists available input names; paste the desired full
+PulseAudio source name into `audio_source`, save, and restart.
 
-- `sensor.turntable_now_playing`
-- `sensor.turntable_artist`
-- `sensor.turntable_title`
-- `sensor.turntable_album`
-- `sensor.turntable_year`
-- `sensor.turntable_recognition_status`
+This mode makes no AudD calls, does not publish track metadata, and consumes no
+recognition quota. Audio is processed locally in memory and discarded.
 
-The main `sensor.turntable_now_playing` entity contains artist, title, album,
-release date, year, label, timecode, artwork URL, song link, Spotify URL,
-Apple Music URL, provider, recognition time, and request counts as attributes.
+Entities (with the default `turntable` prefix):
 
-## Mock test
+- `sensor.turntable_audio_level`: stereo RMS over each update window, in dBFS.
+- `sensor.turntable_audio_peak`: maximum sample magnitude in that window, in dBFS.
+- `sensor.turntable_audio_signal`: `audio` when RMS meets the threshold, otherwise `quiet`.
+- `sensor.turntable_audio_input_status`: `monitoring` or `error`, with input/error attributes.
 
-Keep `input_mode` set to `mock`, edit the four mock metadata fields if desired,
-save the configuration, and restart the app. The test entities should appear in
-Developer Tools > States.
+0 dBFS is full scale. Smaller negative numbers are louder. The display floor is
+-100 dBFS. This measures the electrical audio input, not acoustic room loudness.
+The signal sensor detects level only; it cannot distinguish music from noise.
+Observe quiet and music levels before choosing a threshold. On capture failure,
+level sensors become unavailable and the input reconnects automatically.
 
-## AudD URL test
+For a dashboard, add a Manual card using `examples/usb-audio-dashboard.yaml`.
+The graph shows the last 15 minutes; the entities below it show live readings.
 
-1. Create an AudD API token.
-2. Enter the token in `audd_api_token`.
-3. Set `input_mode` to `audio_url`.
-4. Enter a publicly reachable audio file URL in `test_audio_url`.
-5. Save and restart the app.
-6. Open the app log and then inspect the entities in Developer Tools > States.
-
-One AudD request is made each time the app starts in `audio_url` mode.
-
-## Home Assistant Media file test
-
-1. Place a short audio file that you own in Home Assistant's Media directory.
-2. Set `input_mode` to `media_file`.
-3. Set `media_file` to its path relative to Media, such as `turntable/test.mp3`.
-4. Save and restart the app.
-
-One AudD request is made each time the app starts in `media_file` mode.
-
-## Simulated USB capture
-
-This mode tests the future capture pipeline without a USB audio interface. It
-uses FFmpeg to extract and convert a short section of a Media file, then sends
-the generated WAV capture to the configured provider.
-
-1. Put a song in Media, such as `turntable/test.mp3`.
-2. Set `input_mode` to `simulated_usb`.
-3. Set `media_file` to `turntable/test.mp3`.
-4. Set `sample_seconds` between 5 and 12.
-5. Optionally set `simulated_start_seconds` to skip a quiet introduction.
-6. Save and restart the app.
-
-One recognition request is made per app start. The status progresses through
-`capturing`, `recognizing`, and `recognized`.
-
-The app currently runs one capture on startup. It does not yet monitor the
-turntable for silence or song changes, so restart it to run another test.
-
-## Spending controls
-
-`max_requests_per_day` and `max_requests_per_month` stop AudD calls after the
-configured limit. Request counts are stored in the app's persistent data folder.
-
+Other input modes continue to work as in 0.2.0. Continuous recognition and
+Tidbyt takeover based on this signal threshold are a later step.

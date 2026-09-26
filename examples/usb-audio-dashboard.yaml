@@ -1,0 +1,18 @@
+type: vertical-stack
+cards:
+  - type: history-graph
+    title: Turntable USB Audio — dBFS
+    hours_to_show: 0.25
+    entities:
+      - entity: sensor.turntable_audio_level
+        name: Average
+      - entity: sensor.turntable_audio_peak
+        name: Peak
+  - type: entities
+    entities:
+      - entity: sensor.turntable_audio_level
+        name: Average signal (dBFS)
+      - entity: sensor.turntable_audio_peak
+        name: Peak signal (dBFS)
+      - entity: sensor.turntable_audio_signal
+      - entity: sensor.turntable_audio_input_status

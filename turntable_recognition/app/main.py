@@ -15,6 +15,7 @@ from pathlib import Path
 from typing import Any
 
 import requests
+from audio_meter import run_meter
 
 
 OPTIONS_PATH = Path("/data/options.json")
@@ -262,6 +263,9 @@ def main() -> int:
     options = load_options()
     mode = options.get("input_mode", "mock")
     publisher = HomeAssistantPublisher(options.get("entity_prefix", "turntable"))
+    if mode == "usb_meter":
+        run_meter(options, publisher)
+        return 0
     limiter = UsageLimiter(
         int(options.get("max_requests_per_day", 100)),
         int(options.get("max_requests_per_month", 1000)),
@@ -310,4 +314,3 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-
