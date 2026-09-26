@@ -1,3 +1,11 @@
+# 0.5.0
+
+- Request MusicBrainz metadata with each AudD match and prefer an official original album over singles, compilations, deluxe editions, and reissues.
+- Fill missing duration and recording identity from matching Spotify, Apple Music, or MusicBrainz results while retaining AudD timecode for playback position.
+- Resolve artwork for the exact standard album through Apple's public catalog, with provider and MusicBrainz/Internet Archive fallbacks.
+- Cache resolved album metadata by MusicBrainz recording ID or ISRC in `/data/album_cache.json`; audio samples remain temporary.
+- Publish recording, album-release, artwork-source, timing-source, and selection-reason attributes on the now-playing entity.
+
 # 0.4.0
 
 - Add usb_auto playback sessions with configurable start/stop thresholds and hold times.

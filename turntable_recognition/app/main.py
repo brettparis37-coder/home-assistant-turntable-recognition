@@ -18,10 +18,12 @@ import requests
 from audio_meter import run_meter
 from manual_recognition import ManualRecognition
 from auto_recognition import AutomaticRecognition, timing
+from album_resolver import resolve_audd_payload
 
 
 OPTIONS_PATH = Path("/data/options.json")
 USAGE_PATH = Path("/data/usage.json")
+ALBUM_CACHE_PATH = Path("/data/album_cache.json")
 HA_API = "http://supervisor/core/api"
 
 
@@ -41,6 +43,15 @@ class Track:
     provider: str = ""
     duration_seconds: float | None = None
     position_seconds: float | None = None
+    recognized_version: str = ""
+    album_type: str = ""
+    album_release_group_id: str = ""
+    album_release_id: str = ""
+    artwork_source: str = ""
+    timing_source: str = ""
+    isrc: str = ""
+    musicbrainz_recording_id: str = ""
+    selection_reason: str = ""
 
 
 class RecognitionError(RuntimeError):
@@ -65,7 +76,7 @@ class AudDProvider(Provider):
     def recognize(self, source: str, source_is_url: bool) -> Track:
         data = {
             "api_token": self.token,
-            "return": "spotify,apple_music",
+            "return": "spotify,apple_music,musicbrainz",
         }
         if source_is_url:
             data["url"] = source
@@ -104,7 +115,7 @@ class AudDProvider(Provider):
 
         year_match = re.match(r"^(\d{4})", release_date)
         duration, position = timing(spotify.get("duration_ms") or apple_music.get("durationInMillis"), result.get("timecode"))
-        return Track(
+        base = Track(
             artist=str(result.get("artist") or ""),
             title=str(result.get("title") or ""),
             album=str(result.get("album") or spotify_album.get("name") or ""),
@@ -120,6 +131,23 @@ class AudDProvider(Provider):
             duration_seconds=duration,
             position_seconds=position,
         )
+        try:
+            resolved = resolve_audd_payload(payload, cache_path=ALBUM_CACHE_PATH)
+            base.album = resolved.album or base.album
+            base.release_date = resolved.album_release_date or base.release_date
+            base.year = resolved.album_year or base.year
+            base.artwork_url = resolved.artwork_url or base.artwork_url
+            for field in ("recognized_version", "album_type", "album_release_group_id",
+                          "album_release_id", "artwork_source", "timing_source", "isrc",
+                          "musicbrainz_recording_id", "selection_reason", "duration_seconds",
+                          "position_seconds"):
+                value = getattr(resolved, field)
+                if value not in (None, ""):
+                    setattr(base, field, value)
+            print(f"Album metadata: {base.album} ({base.year}); artwork={base.artwork_source}", flush=True)
+        except Exception as exc:
+            print(f"Album metadata enrichment unavailable; using AudD providers: {exc}", file=sys.stderr, flush=True)
+        return base
 
 
 class UsageLimiter:

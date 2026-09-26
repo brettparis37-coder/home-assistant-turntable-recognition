@@ -1,4 +1,12 @@
-# Automatic USB recognition (0.4.0)
+# Automatic USB recognition (0.5.0)
+
+Recognition requests now include Spotify, Apple Music, and MusicBrainz metadata.
+The app prefers an official original album for display, ranks deluxe/reissue and
+single releases lower, and keeps timing tied to the recognized recording. Exact
+standard-album artwork is resolved through Apple's public catalog when possible.
+Resolved album metadata is cached under `/data/album_cache.json`; raw audio and
+temporary WAV files are not retained. If enrichment fails, recognition continues
+with the original AudD/Spotify/Apple metadata.
 
 Set `input_mode: usb_auto` to enable automatic recognition. Keep the existing
 audio source, AudD token, and request limits. Save and restart the app.
