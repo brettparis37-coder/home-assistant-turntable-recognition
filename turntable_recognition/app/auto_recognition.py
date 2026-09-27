@@ -8,6 +8,7 @@ import wave
 from datetime import datetime, timezone
 
 from diagnostics import exception_details, log_event
+from failed_samples import FailedSampleArchive
 
 
 def timing(duration_ms, timecode):
@@ -66,6 +67,10 @@ class AutomaticRecognition:
         self.capture_started_at = ""
         self.capture_levels = []
         self.waiting_for_capture_signal = False
+        self.failed_sample_archive = FailedSampleArchive(
+            keep=int(options.get("failed_sample_retention", 5))
+        )
+        self.last_failed_sample = None
         self.due = None
         self.identity = None
         self.failures = 0
@@ -90,6 +95,7 @@ class AutomaticRecognition:
             "last_attempt_outcome": self.last_attempt_outcome,
             "last_attempt_error": self.last_attempt_error,
             "last_attempt_duration_seconds": self.last_attempt_duration_seconds,
+            "last_failed_sample": self.last_failed_sample,
             "consecutive_failures": self.failures,
             "retry_seconds": max(0, round(self.due - self.clock())) if self.due is not None else None,
             "check_reason": self.reason,
@@ -243,7 +249,9 @@ class AutomaticRecognition:
                     log_event("capture_completed", attempt_id=self.last_attempt_id,
                               **capture_stats, result="queued_for_recognition")
                     self.status("recognizing")
-                    threading.Thread(target=self.recognize, args=(sample, self.generation, self.capture_start), daemon=True).start()
+                    threading.Thread(target=self.recognize,
+                                     args=(sample, self.generation, self.capture_start, capture_stats),
+                                     daemon=True).start()
         elif self.data is not None:
             # Restart a full contiguous sample after a quiet passage.
             log_event("capture_cancelled_quiet_passage", captured_bytes=len(self.data),
@@ -258,7 +266,7 @@ class AutomaticRecognition:
                       action="wait_for_clear_audio_before_restarting_sample")
         self.publish_session()
 
-    def recognize(self, pcm, generation, started):
+    def recognize(self, pcm, generation, started, capture_stats=None):
         track, error = None, ""
         request_started = time.monotonic()
         request_sent = False
@@ -296,6 +304,22 @@ class AutomaticRecognition:
         secret = str(self.options.get("audd_api_token", ""))
         if secret:
             error = error.replace(secret, "[redacted]")
+        if request_sent and error:
+            try:
+                archived = self.failed_sample_archive.save(
+                    pcm, self.last_attempt_id, error, capture_stats
+                )
+                self.last_failed_sample = archived
+                if archived:
+                    log_event("failed_sample_archived", attempt_id=self.last_attempt_id,
+                              outcome="no_match" if "No song was recognized" in error else "error",
+                              filename=archived["filename"],
+                              media_content_id=archived["media_content_id"],
+                              retained_limit=self.failed_sample_archive.keep)
+            except Exception as archive_error:
+                log_event("failed_sample_archive_failed", level="ERROR",
+                          attempt_id=self.last_attempt_id,
+                          **exception_details(archive_error, secret=secret))
         self.results.put((generation, started, track, error))
 
     def drain_result(self, now):
