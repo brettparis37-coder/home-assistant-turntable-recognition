@@ -1,3 +1,8 @@
+# 0.10.1
+
+- Require live audio to exceed the configured playback start threshold before starting or restarting a recognition sample after a quiet passage.
+- Log when capture waits for clear audio and when the threshold is crossed again.
+
 # 0.10.0
 
 - Add UTC-timestamped structured logs for USB monitoring, playback sessions, captures, AudD requests, recognition outcomes, retry timing, and Discogs matching diagnostics.
