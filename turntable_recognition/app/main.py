@@ -114,13 +114,16 @@ class AudDProvider(Provider):
                   response_fields=sorted(payload.keys()))
         if payload.get("status") != "success":
             error = payload.get("error") or {}
+            error_message = str(error.get("error_message") or "no message")
+            if self.token:
+                error_message = error_message.replace(self.token, "[redacted]")
             log_event("audd_api_rejected_request", level="ERROR",
                       status=payload.get("status"), error_code=error.get("error_code"),
-                      error_message=error.get("error_message"),
+                      error_message=error_message,
                       note="API token and audio payload are intentionally omitted")
             raise RecognitionError(
                 f"AudD API status={payload.get('status')!r}; "
-                f"code={error.get('error_code')!r}; message={error.get('error_message') or 'no message'}"
+                f"code={error.get('error_code')!r}; message={error_message}"
             )
         if not result:
             log_event("audd_no_match", level="WARNING", result="null",
