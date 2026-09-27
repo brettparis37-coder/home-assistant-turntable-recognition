@@ -1,5 +1,5 @@
 name: Turntable Recognition
-version: "0.9.0"
+version: "0.10.0"
 slug: turntable_recognition
 description: Recognize turntable music and publish now-playing entities to Home Assistant.
 startup: application
@@ -77,3 +77,4 @@ schema:
   mock_title: str
   mock_album: str
   mock_year: str
+
