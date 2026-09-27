@@ -1,5 +1,26 @@
 # Automatic USB recognition (0.7.0)
 
+## Diagnostics (0.10.0)
+
+Open **Settings → Apps → Turntable Recognition → Log** to see one-line JSON
+events with UTC timestamps. Events identify the selected input, playback start
+and end, capture duration and RMS range, AudD request start/result/error,
+recognition outcome, backoff number, and exact next retry time. HTTP failures
+include their status, endpoint, a bounded response excerpt, and the relevant
+exception traceback. Credentials and recorded audio are never written to logs.
+
+`sensor.turntable_recognition_status` includes `last_attempt_id`, `last_attempt_at`, `last_attempt_outcome`,
+`last_attempt_error`, `last_attempt_duration_seconds`, `consecutive_failures`,
+`retry_seconds`, and `check_reason`. The playback-state entity continues to
+show whether a request is active and when the next scheduled check is due.
+
+When AudD returns no match, it supplies no alternate candidate list. The log
+will say that the response had `result=null`; this is different from an HTTP
+or API error. A Discogs no-match log includes whether the database was missing,
+the exact recognized-title candidate count, artist-credit mismatches, and up
+to three closest cached track titles when available. Metadata-catalog lookup
+failures are logged separately from AudD recognition failures.
+
 ## Discogs collection matching (0.9.0)
 
 Enable `discogs_enabled` after the Discogs Connector has populated the shared
@@ -115,3 +136,4 @@ The display window does not control Recorder retention: detailed numeric
 history follows your Home Assistant Recorder settings (10 days by default).
 
 Other input modes continue to work. Tidbyt takeover remains a separate step.
+
