@@ -128,6 +128,24 @@ class AutoTests(unittest.TestCase):
         self.assertEqual(self.publisher.cleared, 1)
         self.assertIsNone(self.worker.due)
 
+    def test_partial_capture_waits_for_start_threshold_before_restarting(self):
+        self.worker.feed(bytes(64000), -20)
+        self.worker.feed(bytes(64000), -20)
+        self.assertEqual(len(self.worker.data), 64000)
+
+        # A brief quiet passage discards the partial sample. Hysteresis keeps
+        # playback active at -35 to -30 dBFS, but those levels must not restart
+        # a recognition sample until clear audio crosses the start threshold.
+        self.worker.feed(bytes(64000), -40)
+        self.assertIsNone(self.worker.data)
+        for level in (-35.0, -34.0, -32.0, -30.0):
+            self.worker.feed(bytes(64000), level)
+            self.assertIsNone(self.worker.data)
+
+        self.worker.feed(bytes(64000), -29.0)
+        self.assertIsNotNone(self.worker.data)
+        self.assertEqual(len(self.worker.data), 64000)
+
     def test_quota_stops_capture(self):
         self.limiter.used = 100
         self.worker.feed(bytes(64000), -20)
