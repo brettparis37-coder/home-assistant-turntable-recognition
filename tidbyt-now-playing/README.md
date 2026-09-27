@@ -24,35 +24,42 @@ devicename:
 arguments: "artist=Tears For Fears;title=Everybody Wants To Rule The World;album=Songs From The Big Chair;year=1985;artwork_url=https://i.scdn.co/image/ab67616d0000b27322463d6939fec9e17b2a6235;background=#1f4241;page=details"
 ```
 
-## Add the script and automation
+## Add the scripts and automations
 
 Add the contents of `home-assistant.yaml` to the appropriate script and
 automation YAML files, or create both through the Home Assistant UI using Edit
-in YAML.
+in YAML. Replace the previous `show_turntable_now_playing` script and the old
+"Show New Song on Tidbyt", "Live Sonos Group Volume on Living Room Tidbyt", and
+"Hide Tidbyt Sonos Volume After Idle" automations. Keep unrelated scripts and
+automations in those files.
 
-The automation accepts both `mock` and `recognized` statuses, so mock mode can
-be used for the first end-to-end test.
+The controller starts when both `sensor.turntable_playback_state` is `playing`
+and `sensor.turntable_now_playing` contains a recognized track. It refreshes a
+combined 20-second details-and-cover animation on the living-room Tidbyt until
+playback ends. A new recognized track restarts it with the new metadata.
 
-The Home Assistant script pushes song details, waits ten seconds, then pushes
-the album view separately. Use `page=details` or `page=album` when testing a
-single view from Developer Tools. The album view has a 32×32 cover on the left
-with a scrolling album name and year on the right. The frame delay is 25 ms,
-making scrolling about twice as fast as the earlier 50 ms version while
-keeping each page's animation at ten seconds. Pixlet
-scales the cover with nearest-neighbor sampling, which keeps the image sharp on
-the pixel display. If no artwork URL is available, the second view shows
-`NO COVER ART`. The optional `background` argument applies to both views; it
-falls back to navy when omitted. The sample value is manually selected. Automatic
-color extraction from each recognized album cover is a later recognition-app
-change.
+The combined animation shows the scrolling artist/song view for ten seconds,
+then the album cover and scrolling album details for ten seconds. It is
+refreshed every twenty seconds while playback remains active. The volume script
+interrupts that loop, shows the current group volume, and waits three seconds
+after the latest knob change. If a recognized track is still playing, it resumes
+the now-playing loop; otherwise it removes both temporary apps and restores the
+normal Tidbyt rotation. No timer helper is required.
 
-Each screen is a one-time foreground display. The album page returns to the
-usual Tidbyt rotation afterward. If an older version remains in the rotation
-under content ID `vinylnowplaying`, delete it with `tidbytassistant.delete`:
+Use `page=details` or `page=album` when testing a single view from Developer
+Tools. The album view has a 32×32 cover on the left with a scrolling album name
+and year on the right. If no artwork URL is available, it shows `NO COVER ART`.
+The optional `background` argument applies to both views; it falls back to navy
+when omitted.
+
+The Tidbyt app is installed under content ID `vinylnowplaying` while a track is
+active, and deleted when playback is idle. If an older copy remains in the
+rotation, delete it manually with `tidbytassistant.delete`:
 
 ```yaml
 contentid: vinylnowplaying
 devicename:
   - living_room
 ```
+
 
