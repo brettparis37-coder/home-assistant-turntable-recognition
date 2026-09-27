@@ -65,6 +65,7 @@ class AutomaticRecognition:
         self.capture_start = 0
         self.capture_started_at = ""
         self.capture_levels = []
+        self.waiting_for_capture_signal = False
         self.due = None
         self.identity = None
         self.failures = 0
@@ -128,6 +129,7 @@ class AutomaticRecognition:
         self.generation += 1
         self.data, self.due, self.identity = None, None, None
         self.capture_levels = []
+        self.waiting_for_capture_signal = False
         self.failures = 0
         self.reason = "idle"
         self.publisher.clear_track()
@@ -152,6 +154,7 @@ class AutomaticRecognition:
             self.generation += 1
             self.due = now
             self.reason = "new_session"
+            self.waiting_for_capture_signal = False
             log_event("playback_session_started", input_dbfs=round(rms, 1),
                       threshold_dbfs=self.detector.start_db,
                       sustained_seconds=self.detector.start_seconds)
@@ -173,31 +176,47 @@ class AutomaticRecognition:
             return
         if self.detector.active and not self.detector.quiet:
             if self.data is None and not self.busy and self.due is not None and now >= self.due:
-                day, month = self.limiter.counts()
-                if day >= self.limiter.daily_limit or month >= self.limiter.monthly_limit:
-                    self.due = now + 60
-                    self.reason = "request_limit"
-                    details = self.limiter.details()
-                    if month >= self.limiter.monthly_limit:
-                        message = f"AudD API limit reached; refreshes {details['cycle_end']}"
-                        self.status("api_limit_reached", message)
-                    else:
-                        self.status("daily_limit_reached", "Daily safety limit reached")
+                # Keep capture start aligned with the playback start threshold.
+                # The stop threshold is deliberately lower (hysteresis), so
+                # using only `not quiet` here can start a sample on near-silence
+                # while an active session is being held open for stop detection.
+                if rms <= self.detector.start_db:
+                    if not self.waiting_for_capture_signal:
+                        log_event("capture_waiting_for_start_threshold", input_dbfs=round(rms, 1),
+                                  required_threshold_dbfs=self.detector.start_db,
+                                  check_reason=self.reason)
+                        self.waiting_for_capture_signal = True
                 else:
-                    self.data = bytearray()
-                    self.capture_start = now - len(pcm) / 64000
-                    capture_wall_time = datetime.now(timezone.utc).timestamp() - len(pcm) / 64000
-                    self.capture_started_at = datetime.fromtimestamp(
-                        capture_wall_time, timezone.utc
-                    ).isoformat()
-                    self.capture_levels = []
-                    self.due = None
-                    self.reason = "capturing"
-                    log_event("capture_started", attempt_id=self.attempt_count + 1,
-                              sample_seconds=round(self.target / 64000, 2),
-                              input_dbfs=round(rms, 1), start_threshold_dbfs=self.detector.start_db,
-                              trigger_reason=self.reason)
-                    self.status("capturing")
+                    if self.waiting_for_capture_signal:
+                        log_event("capture_signal_recovered", input_dbfs=round(rms, 1),
+                                  required_threshold_dbfs=self.detector.start_db,
+                                  action="begin_fresh_sample")
+                    self.waiting_for_capture_signal = False
+                    day, month = self.limiter.counts()
+                    if day >= self.limiter.daily_limit or month >= self.limiter.monthly_limit:
+                        self.due = now + 60
+                        self.reason = "request_limit"
+                        details = self.limiter.details()
+                        if month >= self.limiter.monthly_limit:
+                            message = f"AudD API limit reached; refreshes {details['cycle_end']}"
+                            self.status("api_limit_reached", message)
+                        else:
+                            self.status("daily_limit_reached", "Daily safety limit reached")
+                    else:
+                        self.data = bytearray()
+                        self.capture_start = now - len(pcm) / 64000
+                        capture_wall_time = datetime.now(timezone.utc).timestamp() - len(pcm) / 64000
+                        self.capture_started_at = datetime.fromtimestamp(
+                            capture_wall_time, timezone.utc
+                        ).isoformat()
+                        self.capture_levels = []
+                        self.due = None
+                        self.reason = "capturing"
+                        log_event("capture_started", attempt_id=self.attempt_count + 1,
+                                  sample_seconds=round(self.target / 64000, 2),
+                                  input_dbfs=round(rms, 1), start_threshold_dbfs=self.detector.start_db,
+                                  trigger_reason=self.reason)
+                        self.status("capturing")
             if self.data is not None:
                 self.capture_levels.append(float(rms))
                 self.data.extend(pcm[:self.target - len(self.data)])
@@ -233,6 +252,10 @@ class AutomaticRecognition:
             self.data = None
             self.capture_levels = []
             self.due = now
+            self.waiting_for_capture_signal = True
+            log_event("capture_waiting_for_start_threshold", input_dbfs=round(rms, 1),
+                      required_threshold_dbfs=self.detector.start_db,
+                      action="wait_for_clear_audio_before_restarting_sample")
         self.publish_session()
 
     def recognize(self, pcm, generation, started):
