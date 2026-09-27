@@ -1,4 +1,7 @@
+import json
+import tempfile
 import unittest
+from pathlib import Path
 from album_resolver import parse_timecode, normalized_name, standard_release_rank, resolve_audd_payload
 
 
@@ -93,6 +96,32 @@ class ResolverTests(unittest.TestCase):
         self.assertEqual(resolved.artwork_url, "https://is1-ssl.mzstatic.com/image/original/600x600bb.jpg")
         self.assertEqual(resolved.artwork_source, "apple_catalog_exact_track_album")
         self.assertEqual(resolved.duration_seconds, 210)
+
+    def test_replaces_cached_youtube_song_link_with_real_cover_art(self):
+        payload = {"result": {
+            "artist": "Erasmo Carlos", "title": "É preciso dar um jeito, meu amigo",
+            "album": "Carlos, Erasmo...", "release_date": "1971-01-01",
+            "song_link": "https://youtu.be/FuZ0OdtK3P8",
+            "musicbrainz": [{"id": "recording-id", "score": "100",
+                             "title": "É preciso dar um jeito, meu amigo", "releases": []}],
+        }}
+        with tempfile.TemporaryDirectory() as directory:
+            cache_path = Path(directory) / "album_cache.json"
+            cache_path.write_text(json.dumps({"recording-id": {
+                "album": "Carlos, Erasmo...", "album_year": "1971",
+                "album_release_date": "1971-01-01", "album_release_id": "release-id",
+                "artwork_url": "https://youtu.be/FuZ0OdtK3P8?thumb",
+                "artwork_source": "provider_fallback",
+            }}), encoding="utf-8")
+
+            resolved = resolve_audd_payload(payload, client=AppleTrackClient(), cache_path=cache_path)
+            saved = json.loads(cache_path.read_text(encoding="utf-8"))["recording-id"]
+
+        expected = "https://is1-ssl.mzstatic.com/image/original/600x600bb.jpg"
+        self.assertEqual(resolved.artwork_url, expected)
+        self.assertEqual(resolved.artwork_source, "apple_catalog_exact_track_album")
+        self.assertEqual(saved["artwork_url"], expected)
+        self.assertFalse(resolved.artwork_url.startswith("https://youtu.be/"))
 
 
 if __name__ == "__main__": unittest.main()
