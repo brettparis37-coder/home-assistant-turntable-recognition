@@ -1,7 +1,9 @@
 import os
 import queue
+import tempfile
 import unittest
 import wave
+from pathlib import Path
 from types import SimpleNamespace
 from auto_recognition import AutomaticRecognition, SessionDetector, timing
 
@@ -167,6 +169,24 @@ class AutoTests(unittest.TestCase):
         self.assertEqual(self.limiter.used, 1)
         self.assertEqual(self.worker.results.qsize(), 1)
         self.assertFalse(os.path.exists(paths[0]))
+
+    def test_failed_request_is_archived_but_success_is_not(self):
+        from failed_samples import FailedSampleArchive
+
+        with tempfile.TemporaryDirectory() as directory:
+            self.worker.failed_sample_archive = FailedSampleArchive(directory, keep=5)
+
+            class NoMatchProvider:
+                def recognize(self, path, is_url):
+                    raise RuntimeError("No song was recognized")
+
+            self.worker.provider_factory = lambda token: NoMatchProvider()
+            self.worker.recognize(bytes(64000), 0, 80,
+                                  {"sample_seconds": 1, "rms_mean_dbfs": -20})
+            samples = list(Path(directory).glob("*.wav"))
+            self.assertEqual(len(samples), 1)
+            self.assertIsNotNone(self.worker.last_failed_sample)
+            self.assertEqual(self.worker.last_failed_sample["filename"], samples[0].name)
 
 
 if __name__ == '__main__': unittest.main()
