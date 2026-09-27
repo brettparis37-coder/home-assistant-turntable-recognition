@@ -57,7 +57,19 @@ class MatcherTests(unittest.TestCase):
         self.assertEqual(match["master_artwork_url"], "https://master/art.jpg")
 
     def test_no_track_match_returns_none(self):
-        self.assertIsNone(DiscogsMatcher(str(self.path)).match("The Artist", "Missing Song"))
+        matcher = DiscogsMatcher(str(self.path))
+        self.assertIsNone(matcher.match("The Artist", "A Great Sng"))
+        self.assertEqual(matcher.last_diagnostics["status"], "no_exact_track_title")
+        self.assertEqual(matcher.last_diagnostics["collection_track_count"], 3)
+        self.assertEqual(matcher.last_diagnostics["closest_track_titles"][0]["track_title"], "A Great Song!")
+
+    def test_artist_mismatch_is_reported_for_exact_title_candidates(self):
+        matcher = DiscogsMatcher(str(self.path))
+        result = matcher.match("A Different Artist", "A Great Song")
+        self.assertEqual(result["release_id"], 10)
+        self.assertFalse(matcher.last_diagnostics["artist_match"])
+        self.assertEqual(matcher.last_diagnostics["exact_title_candidate_count"], 3)
+        self.assertEqual(matcher.last_diagnostics["status"], "matched")
 
     def test_apply_match_keeps_both_values_and_selects_configured_defaults(self):
         track = SimpleNamespace(year="1985", title="Provider title", artist="Provider artist",
@@ -119,3 +131,4 @@ class MatcherTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
