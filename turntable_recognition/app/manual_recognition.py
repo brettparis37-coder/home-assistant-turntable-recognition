@@ -5,6 +5,8 @@ import tempfile
 import threading
 import wave
 
+from diagnostics import exception_details, log_event
+
 
 class ManualRecognition:
     def __init__(self, options, publisher, limiter, provider_factory):
@@ -32,17 +34,18 @@ class ManualRecognition:
                 if isinstance(command, dict) and command.get("command") == "recognize":
                     self.request()
                 else:
-                    print("Ignored unknown input command", flush=True)
+                    log_event("manual_command_ignored", level="WARNING", reason="unknown command")
             except (ValueError, TypeError):
-                print("Ignored invalid input command", flush=True)
+                log_event("manual_command_ignored", level="WARNING", reason="invalid command")
 
     def request(self):
         with self.lock:
             if self.busy:
-                print("Recognition already active; duplicate command ignored", flush=True)
+                log_event("manual_command_ignored", level="WARNING", reason="recognition already active")
                 return False
             self.busy = True
             self.recording = True
+            log_event("manual_capture_started", sample_seconds=round(self.target / 64000, 2))
             self.data.clear()
             self.error = ""
             self.ready.clear()
@@ -76,6 +79,8 @@ class ManualRecognition:
                     raise RuntimeError(self.error)
                 pcm = bytes(self.data)
                 self.data.clear()
+            log_event("manual_capture_completed", sample_bytes=len(pcm),
+                      sample_seconds=round(len(pcm) / 64000, 2))
             provider = self.provider_factory(str(self.options.get("audd_api_token", "")))
             with tempfile.TemporaryDirectory(prefix="turntable-") as directory:
                 path = directory + "/sample.wav"
@@ -88,17 +93,22 @@ class ManualRecognition:
                 self.publisher.publish_status("recognizing", day, month)
                 track = provider.recognize(path, False)
                 self.publisher.publish_track(track, "recognized", day, month)
-                print(f"Live USB recognized: {track.artist} - {track.title}", flush=True)
+                log_event("manual_recognition_succeeded", artist=track.artist, title=track.title,
+                          album=getattr(track, "album", ""),
+                          provider=getattr(track, "provider", "audd"))
         except Exception as exc:
-            print(f"Manual recognition error: {exc}", file=sys.stderr, flush=True)
+            log_event("manual_recognition_failed", level="ERROR",
+                      **exception_details(exc, secret=str(self.options.get("audd_api_token", ""))))
             try:
                 day, month = self.limiter.counts()
                 status = "api_limit_reached" if "AudD API limit reached" in str(exc) else "error"
                 self.publisher.publish_status(status, day, month, str(exc))
             except Exception as publish_error:
-                print(f"Could not publish recognition error: {publish_error}", file=sys.stderr, flush=True)
+                log_event("manual_recognition_error_publish_failed", level="ERROR",
+                          **exception_details(publish_error))
         finally:
             with self.lock:
                 self.busy = False
                 self.recording = False
                 self.data.clear()
+
