@@ -1,3 +1,9 @@
+# 0.10.0
+
+- Add UTC-timestamped structured logs for USB monitoring, playback sessions, captures, AudD requests, recognition outcomes, retry timing, and Discogs matching diagnostics.
+- Publish last-attempt ID, outcome, error, duration, consecutive failures, retry delay, and next-check details on the recognition status sensor.
+- Log HTTP status, endpoint, and a bounded response excerpt on failures; never log API credentials or captured audio.
+
 # 0.9.0
 
 - Optionally match recognized tracks to the local Discogs collection database and expose release/master artwork and years separately.
@@ -58,3 +64,4 @@
 # 0.2.0
 
 - Add simulated USB capture from a Media file with FFmpeg.
+
