@@ -16,6 +16,10 @@ class AppleTrackClient:
                  "releaseDate": "1971-01-01", "artworkUrl100": "https://is1-ssl.mzstatic.com/image/100x100bb.jpg",
                  "trackTimeMillis": 210000},
                 {"artistName": "Erasmo Carlos", "trackName": "É preciso dar um jeito, meu amigo",
+                 "collectionName": "Carlos, Erasmo", "collectionType": "Album",
+                 "releaseDate": "1971-01-01", "artworkUrl100": "https://is1-ssl.mzstatic.com/image/original/100x100bb.jpg",
+                 "trackTimeMillis": 210000},
+                {"artistName": "Erasmo Carlos", "trackName": "É preciso dar um jeito, meu amigo",
                  "collectionName": "É Preciso Dar Um Jeito, Meu Amigo - Single", "collectionType": "Album",
                  "releaseDate": "2025-01-01", "artworkUrl100": "https://wrong.example/single.jpg"},
             ]}
@@ -85,8 +89,8 @@ class ResolverTests(unittest.TestCase):
             "song_link": "https://youtu.be/FuZ0OdtK3P8",
         }}
         resolved = resolve_audd_payload(payload, client=AppleTrackClient())
-        self.assertEqual(resolved.album, "Carlos, Erasmo (Versão Com Bônus)")
-        self.assertEqual(resolved.artwork_url, "https://is1-ssl.mzstatic.com/image/600x600bb.jpg")
+        self.assertEqual(resolved.album, "Carlos, Erasmo")
+        self.assertEqual(resolved.artwork_url, "https://is1-ssl.mzstatic.com/image/original/600x600bb.jpg")
         self.assertEqual(resolved.artwork_source, "apple_catalog_exact_track_album")
         self.assertEqual(resolved.duration_seconds, 210)
 
