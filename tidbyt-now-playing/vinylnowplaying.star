@@ -130,10 +130,20 @@ def main(config):
     elif year != "":
         detail = year
 
-    if page == "album":
+    details = song_page(artist, title, detail, background)
+
+    if page == "both":
+        album_view = cover_page(artwork_url, album, year, background)
+        selected_page = render.Sequence(
+            children = [
+                render.Animation(children = [details] * PAGE_FRAMES),
+                render.Animation(children = [album_view] * PAGE_FRAMES),
+            ],
+        )
+    elif page == "album":
         selected_page = cover_page(artwork_url, album, year, background)
     else:
-        selected_page = song_page(artist, title, detail, background)
+        selected_page = details
 
     return render.Root(
         delay = FRAME_DELAY,
@@ -143,4 +153,5 @@ def main(config):
             children = [selected_page] * PAGE_FRAMES,
         ),
     )
+
 
