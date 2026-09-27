@@ -186,8 +186,11 @@ class AutomaticRecognition:
                 else:
                     self.data = bytearray()
                     self.capture_start = now - len(pcm) / 64000
-                    self.capture_started_at = datetime.now(timezone.utc).isoformat()
-                    self.capture_levels = [float(rms)]
+                    capture_wall_time = datetime.now(timezone.utc).timestamp() - len(pcm) / 64000
+                    self.capture_started_at = datetime.fromtimestamp(
+                        capture_wall_time, timezone.utc
+                    ).isoformat()
+                    self.capture_levels = []
                     self.due = None
                     self.reason = "capturing"
                     log_event("capture_started", attempt_id=self.attempt_count + 1,
