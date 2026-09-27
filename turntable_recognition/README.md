@@ -1,6 +1,6 @@
 # Turntable Recognition
 
-Version 0.10.0 adds detailed UTC-timestamped diagnostics for audio capture, AudD attempts, no-match results, retries, and Discogs collection matching. Version 0.9.0 added optional matching against the local Discogs collection, with distinct release/master artwork and year attributes, plus Tidbyt playback cleanup and resume behavior.
+Version 0.10.1 tightens live capture restarts to wait for clear audio above the playback start threshold, with explicit wait/resume logs. Version 0.10.0 adds detailed UTC-timestamped diagnostics for audio capture, AudD attempts, no-match results, retries, and Discogs collection matching. Version 0.9.0 added optional matching against the local Discogs collection, with distinct release/master artwork and year attributes, plus Tidbyt playback cleanup and resume behavior.
 
 Set `input_mode: usb_auto` and `audio_source: auto`, save and restart. Keep your existing AudD token and request limits.
 
