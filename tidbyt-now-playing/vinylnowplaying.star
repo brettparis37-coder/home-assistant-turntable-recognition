@@ -153,5 +153,3 @@ def main(config):
             children = [selected_page] * PAGE_FRAMES,
         ),
     )
-
-

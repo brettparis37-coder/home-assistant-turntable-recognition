@@ -102,4 +102,3 @@ class ManualRecognition:
                 self.busy = False
                 self.recording = False
                 self.data.clear()
-

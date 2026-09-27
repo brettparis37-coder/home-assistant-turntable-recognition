@@ -1,5 +1,23 @@
 # Automatic USB recognition (0.7.0)
 
+## Discogs collection matching (0.9.0)
+
+Enable `discogs_enabled` after the Discogs Connector has populated the shared
+`/share/home_apps.sqlite3` database. Recognition checks only tracks in your
+cached collection. If no exact track-title match is found, the existing AudD
+and catalog metadata path remains in use. The database is mounted read/write
+for SQLite WAL compatibility, but recognition opens it read-only.
+
+The now-playing entity publishes `release_year`, `master_year`,
+`release_artwork_url`, and `master_artwork_url` alongside the selected `year`
+and `artwork_url`. The `discogs_year_preference` and
+`discogs_artwork_preference` options choose which value fills the familiar
+display fields; both source values remain available.
+
+Matching is exact after basic punctuation/case normalization. If several
+owned releases contain the same title, it prefers a matching artist credit,
+then a stable release/track ordering.
+
 Recognition requests now include Spotify, Apple Music, and MusicBrainz metadata.
 The app prefers an official original album for display, ranks deluxe/reissue and
 single releases lower, and keeps timing tied to the recognized recording. Exact
@@ -97,4 +115,3 @@ The display window does not control Recorder retention: detailed numeric
 history follows your Home Assistant Recorder settings (10 days by default).
 
 Other input modes continue to work. Tidbyt takeover remains a separate step.
-

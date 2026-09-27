@@ -355,4 +355,3 @@ def resolve_audd_payload(payload, client=None, cache_path=None):
         temporary.write_text(json.dumps(cache, indent=2), encoding="utf-8")
         temporary.replace(cache_file)
     return resolved
-

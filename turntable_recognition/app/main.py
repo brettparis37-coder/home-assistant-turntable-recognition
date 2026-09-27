@@ -20,6 +20,7 @@ from audio_meter import run_meter
 from manual_recognition import ManualRecognition
 from auto_recognition import AutomaticRecognition, timing
 from album_resolver import resolve_audd_payload
+from discogs_matcher import DiscogsMatcher, apply_match
 
 
 OPTIONS_PATH = Path("/data/options.json")
@@ -39,6 +40,12 @@ class Track:
     timecode: str = ""
     song_link: str = ""
     artwork_url: str = ""
+    release_artwork_url: str = ""
+    master_artwork_url: str = ""
+    release_year: str = ""
+    master_year: str = ""
+    discogs_release_id: str = ""
+    discogs_master_id: str = ""
     spotify_url: str = ""
     apple_music_url: str = ""
     provider: str = ""
@@ -69,10 +76,11 @@ class Provider:
 class AudDProvider(Provider):
     name = "audd"
 
-    def __init__(self, token: str) -> None:
+    def __init__(self, token: str, options: dict[str, Any] | None = None) -> None:
         if not token:
             raise RecognitionError("An AudD API token is required for this input mode")
         self.token = token
+        self.options = options or {}
 
     def recognize(self, source: str, source_is_url: bool) -> Track:
         data = {
@@ -132,22 +140,41 @@ class AudDProvider(Provider):
             duration_seconds=duration,
             position_seconds=position,
         )
-        try:
-            resolved = resolve_audd_payload(payload, cache_path=ALBUM_CACHE_PATH)
-            base.album = resolved.album or base.album
-            base.release_date = resolved.album_release_date or base.release_date
-            base.year = resolved.album_year or base.year
-            base.artwork_url = resolved.artwork_url or base.artwork_url
-            for field in ("recognized_version", "album_type", "album_release_group_id",
-                          "album_release_id", "artwork_source", "timing_source", "isrc",
-                          "musicbrainz_recording_id", "selection_reason", "duration_seconds",
-                          "position_seconds"):
-                value = getattr(resolved, field)
-                if value not in (None, ""):
-                    setattr(base, field, value)
-            print(f"Album metadata: {base.album} ({base.year}); artwork={base.artwork_source}", flush=True)
-        except Exception as exc:
-            print(f"Album metadata enrichment unavailable; using AudD providers: {exc}", file=sys.stderr, flush=True)
+        discogs_match = None
+        if self.options.get("discogs_enabled", False):
+            try:
+                discogs_match = DiscogsMatcher(str(self.options.get("discogs_database_path") or "/share/home_apps.sqlite3")).match(
+                    base.artist, base.title
+                )
+            except Exception as exc:
+                print(f"Discogs collection match unavailable; using AudD metadata: {exc}", file=sys.stderr, flush=True)
+        if discogs_match:
+            apply_match(base, discogs_match, self.options)
+            base.release_date = base.release_year or base.release_date
+            base.recognized_version = base.title
+            base.album_type = "Album"
+            base.isrc = str(((spotify.get("external_ids") or {}).get("isrc")) or apple_music.get("isrc") or "")
+            base.timing_source = "spotify" if spotify.get("duration_ms") else "apple_music" if apple_music.get("durationInMillis") else ""
+            print(f"Matched cached Discogs release: {base.album} ({base.release_year or 'year unknown'})", flush=True)
+        else:
+            try:
+                resolved = resolve_audd_payload(payload, cache_path=ALBUM_CACHE_PATH)
+                base.album = resolved.album or base.album
+                base.release_date = resolved.album_release_date or base.release_date
+                base.year = resolved.album_year or base.year
+                base.artwork_url = resolved.artwork_url or base.artwork_url
+                for field in ("recognized_version", "album_type", "album_release_group_id",
+                              "album_release_id", "artwork_source", "timing_source", "isrc",
+                              "musicbrainz_recording_id", "selection_reason", "duration_seconds",
+                              "position_seconds"):
+                    value = getattr(resolved, field)
+                    if value not in (None, ""):
+                        setattr(base, field, value)
+                print(f"Album metadata: {base.album} ({base.year}); artwork={base.artwork_source}", flush=True)
+            except Exception as exc:
+                print(f"Album metadata enrichment unavailable; using AudD providers: {exc}", file=sys.stderr, flush=True)
+            base.release_year = base.year
+            base.release_artwork_url = base.artwork_url
         return base
 
 
@@ -279,6 +306,8 @@ class HomeAssistantPublisher:
         self.set_state("now_playing", "Nothing playing", {
             "friendly_name": "Turntable Now Playing", "icon": "mdi:album",
             "artist": "", "title": "", "album": "", "year": "", "artwork_url": "",
+            "release_year": "", "master_year": "", "release_artwork_url": "",
+            "master_artwork_url": "", "discogs_release_id": "", "discogs_master_id": "",
         })
         for suffix in ("artist", "title", "album", "year"):
             self.set_state(suffix, "unknown", {"friendly_name": "Turntable " + suffix.title()})
@@ -385,14 +414,15 @@ def main() -> int:
         int(options.get("billing_cycle_day", 1)),
     )
     publisher = HomeAssistantPublisher(options.get("entity_prefix", "turntable"), limiter)
+    provider_factory = lambda token: AudDProvider(token, options)
     day_count, month_count = limiter.counts()
     if mode == "usb_auto":
-        automatic = AutomaticRecognition(options, publisher, limiter, AudDProvider)
+        automatic = AutomaticRecognition(options, publisher, limiter, provider_factory)
         automatic.start()
         run_meter(options, publisher, automatic=automatic)
         return 0
     if mode == "usb_meter":
-        manual = ManualRecognition(options, publisher, limiter, AudDProvider)
+        manual = ManualRecognition(options, publisher, limiter, provider_factory)
         manual.start()
         run_meter(options, publisher, manual)
         return 0
@@ -404,7 +434,7 @@ def main() -> int:
         else:
             if options.get("provider") != "audd":
                 raise RecognitionError(f"Unsupported provider: {options.get('provider')}")
-            provider = AudDProvider(str(options.get("audd_api_token", "")))
+            provider = AudDProvider(str(options.get("audd_api_token", "")), options)
             if mode == "audio_url":
                 source = str(options.get("test_audio_url", ""))
                 source_is_url = True
@@ -440,4 +470,3 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-

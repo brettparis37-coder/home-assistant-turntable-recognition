@@ -1,6 +1,6 @@
 # Turntable Recognition
 
-Version 0.7.0 adds billing-cycle protection and safer song-end scheduling to automatic live USB recognition.
+Version 0.9.0 adds optional matching against the local Discogs collection, with distinct release/master artwork and year attributes, plus Tidbyt playback cleanup and resume behavior.
 
 Set `input_mode: usb_auto` and `audio_source: auto`, save and restart. Keep your existing AudD token and request limits.
 
@@ -16,4 +16,3 @@ Set `input_mode: usb_auto` and `audio_source: auto`, save and restart. Keep your
 The now-playing entity exposes artist, title, recognized version, album, original year, artwork and its source, ISRC, MusicBrainz IDs, duration, position, timing source, and selection reason. See Documentation for full options.
 
 Use LINE on the UFO202 when feeding it from an external phono preamp. dBFS measures captured electrical signal, not room loudness or Sonos volume.
-

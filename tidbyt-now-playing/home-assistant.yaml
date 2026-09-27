@@ -43,6 +43,11 @@ script:
                       - living_room
                     arguments: "{{ tidbyt_arguments }};page=album"
                 - delay: "00:00:10"
+      - action: tidbytassistant.delete
+        data:
+          contentid: vinylnowplaying
+          devicename:
+            - living_room
 
   turntable_tidbyt_volume_override:
     alias: Temporarily Override Turntable Tidbyt with Volume
@@ -151,6 +156,8 @@ automation:
              or trigger.from_state.state != trigger.to_state.state
              or trigger.from_state.attributes.get('artist') != trigger.to_state.attributes.get('artist')
              or trigger.from_state.attributes.get('album') != trigger.to_state.attributes.get('album')
+             or trigger.from_state.attributes.get('title') != trigger.to_state.attributes.get('title')
+             or trigger.from_state.attributes.get('artwork_url') != trigger.to_state.attributes.get('artwork_url')
              or trigger.from_state.attributes.get('recognition_status') != trigger.to_state.attributes.get('recognition_status') }}
     actions:
       - action: script.turn_on
@@ -163,8 +170,8 @@ automation:
     triggers:
       - trigger: state
         entity_id: sensor.turntable_playback_state
-        from: playing
-        to: idle
+      - trigger: state
+        entity_id: sensor.turntable_now_playing
     conditions:
       - condition: template
         value_template: >-
@@ -205,4 +212,3 @@ automation:
       - action: script.turn_on
         target:
           entity_id: script.turntable_tidbyt_volume_override
-

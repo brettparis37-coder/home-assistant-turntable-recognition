@@ -1,5 +1,5 @@
 name: Turntable Recognition
-version: "0.8.1"
+version: "0.9.0"
 slug: turntable_recognition
 description: Recognize turntable music and publish now-playing entities to Home Assistant.
 startup: application
@@ -14,6 +14,7 @@ stdin: true
 map:
   - type: media
     read_only: true
+  - share:rw
 options:
   provider: audd
   input_mode: mock
@@ -37,6 +38,10 @@ options:
   max_requests_per_day: 100
   max_requests_per_month: 1000
   billing_cycle_day: 25
+  discogs_enabled: false
+  discogs_database_path: /share/home_apps.sqlite3
+  discogs_artwork_preference: master
+  discogs_year_preference: master
   mock_artist: Fleetwood Mac
   mock_title: Dreams
   mock_album: Rumours
@@ -64,8 +69,11 @@ schema:
   max_requests_per_day: int(1,10000)
   max_requests_per_month: int(1,100000)
   billing_cycle_day: int(1,28)
+  discogs_enabled: bool
+  discogs_database_path: str
+  discogs_artwork_preference: list(master|release)
+  discogs_year_preference: list(master|release)
   mock_artist: str
   mock_title: str
   mock_album: str
   mock_year: str
-

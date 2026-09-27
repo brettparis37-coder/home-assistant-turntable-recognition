@@ -216,4 +216,3 @@ class AutomaticRecognition:
         self.identity = identity
         self.publisher.publish_track(track, "recognized", *self.limiter.counts())
         print(f"Automatic recognition: {track.artist} - {track.title}; {self.reason}; next check in {round(self.due - now)}s", flush=True)
-

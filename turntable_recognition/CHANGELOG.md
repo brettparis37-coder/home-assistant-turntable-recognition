@@ -1,3 +1,8 @@
+# 0.9.0
+
+- Optionally match recognized tracks to the local Discogs collection database and expose release/master artwork and years separately.
+- Clean up both Tidbyt now-playing pages when playback ends and resume now-playing after the temporary volume override.
+
 # 0.8.1
 
 - Discard cached YouTube song-page URLs that were previously stored as album artwork, then resolve and cache a direct catalog cover URL.
@@ -53,4 +58,3 @@
 # 0.2.0
 
 - Add simulated USB capture from a Media file with FFmpeg.
-

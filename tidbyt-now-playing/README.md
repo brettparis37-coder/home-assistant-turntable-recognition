@@ -63,5 +63,3 @@ contentid: vinylnowplaying
 devicename:
   - living_room
 ```
-
-
