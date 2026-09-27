@@ -40,11 +40,13 @@ playback ends. A new recognized track restarts it with the new metadata.
 
 The combined animation shows the scrolling artist/song view for ten seconds,
 then the album cover and scrolling album details for ten seconds. It is
-refreshed every twenty seconds while playback remains active. The volume script
-interrupts that loop, shows the current group volume, and waits three seconds
-after the latest knob change. If a recognized track is still playing, it resumes
-the now-playing loop; otherwise it removes both temporary apps and restores the
-normal Tidbyt rotation. No timer helper is required.
+refreshed every twenty seconds while playback remains active. Only clockwise or
+counterclockwise events from the Hue rotary dial interrupt that loop; changing
+volume from a dashboard slider does not. The volume script shows the current
+group volume and waits three seconds after the latest dial event. If a
+recognized track is still playing, it resumes the now-playing loop; otherwise
+it removes both temporary apps and restores the normal Tidbyt rotation. No timer
+helper is required.
 
 Use `page=details` or `page=album` when testing a single view from Developer
 Tools. The album view has a 32×32 cover on the left with a scrolling album name
