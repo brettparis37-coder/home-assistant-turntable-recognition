@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import re
 import sqlite3
+from difflib import get_close_matches
 from pathlib import Path
 
 
@@ -13,11 +14,17 @@ def normalize(value: str) -> str:
 class DiscogsMatcher:
     def __init__(self, database_path: str = "/share/home_apps.sqlite3") -> None:
         self.database_path = Path(database_path)
+        self.last_diagnostics = {"status": "not_run"}
 
     def match(self, artist: str, title: str) -> dict | None:
         wanted_title = normalize(title)
         wanted_artist = normalize(artist)
-        if not wanted_title or not self.database_path.is_file():
+        self.last_diagnostics = {"artist": artist, "title": title}
+        if not wanted_title:
+            self.last_diagnostics["status"] = "empty_recognized_title"
+            return None
+        if not self.database_path.is_file():
+            self.last_diagnostics.update(status="database_missing", database_path=str(self.database_path))
             return None
         # Open the shared app database in read-only mode. The app configuration
         # grants the share mount for SQLite WAL reads; this client never writes.
@@ -51,24 +58,58 @@ class DiscogsMatcher:
                     GROUP BY t.track_key
                     ORDER BY r.release_id, t.sequence"""
             ).fetchall()
-        except (sqlite3.Error, OSError):
+        except (sqlite3.Error, OSError) as exc:
+            self.last_diagnostics.update(status="database_query_failed", error_type=type(exc).__name__, error=str(exc))
             return None
         finally:
             if connection is not None:
                 connection.close()
 
         candidates = []
+        title_matches = []
         for row in rows:
             if normalize(row["track_title"]) != wanted_title:
                 continue
             credits = normalize(" ".join(filter(None, (row["album_artists"], row["track_artists"]))))
             artist_match = bool(wanted_artist and wanted_artist in credits)
             candidates.append((not artist_match, row["release_id"], row["sequence"], row))
+            title_matches.append({
+                "release_id": row["release_id"], "album": row["album"],
+                "track_title": row["track_title"],
+                "album_artists": row["album_artists"] or "",
+                "track_artists": row["track_artists"] or "",
+                "artist_match": artist_match,
+            })
         if not candidates:
+            unique_titles = sorted({normalize(str(row["track_title"])): str(row["track_title"])
+                                    for row in rows if row["track_title"]}.values())
+            title_map = {normalize(value): value for value in unique_titles}
+            suggestions = get_close_matches(wanted_title, list(title_map), n=3, cutoff=0.5)
+            closest = []
+            for normalized in suggestions:
+                suggestion = title_map[normalized]
+                related = [row for row in rows if normalize(str(row["track_title"])) == normalized]
+                closest.append({
+                    "track_title": suggestion,
+                    "albums": list(dict.fromkeys(str(row["album"] or "") for row in related))[:3],
+                    "release_ids": list(dict.fromkeys(int(row["release_id"]) for row in related))[:3],
+                })
+            self.last_diagnostics.update(
+                status="no_exact_track_title", collection_track_count=len(rows),
+                closest_track_titles=closest,
+            )
             return None
         # Prefer a matching artist credit; otherwise use the first stable release
         # and track order. This is intentionally simple and deterministic.
         row = min(candidates, key=lambda value: value[:3])[3]
+        self.last_diagnostics.update(
+            status="matched", collection_track_count=len(rows),
+            exact_title_candidate_count=len(title_matches),
+            selected_release_id=row["release_id"],
+            artist_match=next(item["artist_match"] for item in title_matches
+                              if item["release_id"] == row["release_id"]),
+            candidates=title_matches[:5],
+        )
         return dict(row)
 
 
@@ -94,3 +135,4 @@ def apply_match(track, match: dict, options: dict) -> None:
         track.artwork_url = selected_art
         track.artwork_source = "discogs_master" if selected_art == track.master_artwork_url else "discogs_release"
     track.selection_reason = "matched an exact track in the cached Discogs collection"
+
