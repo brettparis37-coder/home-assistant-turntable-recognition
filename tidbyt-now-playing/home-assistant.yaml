@@ -168,23 +168,17 @@ automation:
               devicename:
                 - living_room
 
-  - alias: Live Sonos Group Volume on Living Room Tidbyt
+  - alias: Hue Dial Volume - Override Living Room Tidbyt
     id: '1790130859185'
     mode: restart
     triggers:
-      - trigger: state
-        entity_id:
-          - media_player.turn_table_turn_table
-          - media_player.living_room_living_room
-          - media_player.kitchen_kitchen
-          - media_player.office_office
-          - media_player.portable
-        attribute: volume_level
-    conditions:
-      - condition: template
-        value_template: >-
-          {{ trigger.entity_id in (state_attr('media_player.turn_table_turn_table', 'group_members')
-             | default(['media_player.turn_table_turn_table'], true)) }}
+      - trigger: event.received
+        target:
+          entity_id: event.unassigned_hue_tap_dial_switch_1_rotary
+        options:
+          event_type:
+            - clock_wise
+            - counter_clock_wise
     actions:
       - action: script.turn_on
         target:
