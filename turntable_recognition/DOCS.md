@@ -1,5 +1,11 @@
 # Automatic USB recognition (0.7.0)
 
+## Failed audio samples (0.10.2)
+
+Automatic recognition retains the last five submitted samples that AudD does not recognize or rejects as WAV files under `/media/turntable_recognition/failed_samples`. Each WAV has a JSON sidecar with UTC capture time, attempt ID, failure outcome, measured audio-level summary, and error text. When retention is exceeded, the oldest WAV and sidecar are evicted. Successful recognition samples are discarded after the request. Set `failed_sample_retention` to `0` to disable archiving; supported values are 0 through 20.
+
+Open **Media → My media → turntable_recognition → failed_samples** to browse and play the samples. These files are in Home Assistant's authenticated local media directory, not a public `/local` folder. They may contain copyrighted music from your records; keep the retention limit low and delete files from Media when no longer needed.
+
 ## Diagnostics (0.10.0)
 
 Open **Settings → Apps → Turntable Recognition → Log** to see one-line JSON
