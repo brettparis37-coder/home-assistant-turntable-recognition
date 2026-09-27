@@ -1,5 +1,5 @@
 name: Turntable Recognition
-version: "0.10.1"
+version: "0.10.2"
 slug: turntable_recognition
 description: Recognize turntable music and publish now-playing entities to Home Assistant.
 startup: application
@@ -13,7 +13,7 @@ audio: true
 stdin: true
 map:
   - type: media
-    read_only: true
+    read_only: false
   - share:rw
 options:
   provider: audd
@@ -33,6 +33,7 @@ options:
   test_audio_url: "https://audd.tech/example.mp3"
   media_file: ""
   sample_seconds: 12
+  failed_sample_retention: 5
   simulated_start_seconds: 0
   entity_prefix: turntable
   max_requests_per_day: 100
@@ -64,6 +65,7 @@ schema:
   test_audio_url: str
   media_file: str
   sample_seconds: int(5,12)
+  failed_sample_retention: int(0,20)
   simulated_start_seconds: int(0,86400)
   entity_prefix: match(^[a-z0-9_]+$)
   max_requests_per_day: int(1,10000)
