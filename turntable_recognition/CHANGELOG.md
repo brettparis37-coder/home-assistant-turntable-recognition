@@ -1,3 +1,7 @@
+# 0.8.1
+
+- Discard cached YouTube song-page URLs that were previously stored as album artwork, then resolve and cache a direct catalog cover URL.
+
 # 0.8.0
 
 - Search MusicBrainz by exact artist and track title when AudD does not return a recording ID, then use the matching recording's official album releases.

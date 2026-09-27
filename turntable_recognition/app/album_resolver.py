@@ -69,6 +69,15 @@ def first_value(*values):
     return next((value for value in values if value not in (None, "", [])), None)
 
 
+def is_song_page_url(value):
+    """Return True for known track/video pages that cannot be rendered as cover art."""
+    try:
+        hostname = (urllib.parse.urlparse(str(value)).hostname or "").casefold().rstrip(".")
+    except (TypeError, ValueError):
+        return False
+    return hostname == "youtu.be" or hostname == "youtube.com" or hostname.endswith(".youtube.com")
+
+
 def choose_recording(result):
     entries = result.get("musicbrainz") or []
     return max(entries, key=lambda item: float(item.get("score") or 0), default={})
@@ -232,7 +241,11 @@ def resolve_audd_payload(payload, client=None, cache_path=None):
     if not recording.get("id"):
         recording = search_recording(client, result.get("artist") or "", result.get("title") or "")
     if recording.get("id") and not recording.get("releases"):
-        recording = lookup_recording(client, recording["id"])
+        recording_id = recording["id"]
+        recording_detail = lookup_recording(client, recording_id)
+        if recording_detail:
+            recording_detail.setdefault("id", recording_id)
+            recording = recording_detail
     group = choose_album_group(recording)
 
     spotify_isrc = (spotify.get("external_ids") or {}).get("isrc")
@@ -272,6 +285,12 @@ def resolve_audd_payload(payload, client=None, cache_path=None):
     album_date = group_detail.get("first-release-date") or release.get("date") or result.get("release_date") or ""
     artwork = cached.get("artwork_url", "")
     artwork_source = cached.get("artwork_source", "")
+    # Older cache entries may contain AudD's song_link (for example, a YouTube
+    # watch page) as if it were artwork. Ignore that cached value and resolve a
+    # real cover URL again.
+    if is_song_page_url(artwork):
+        artwork = ""
+        artwork_source = ""
     if not artwork and album_name:
         artwork = apple_album_art(client, result.get("artist") or "", album_name, str(album_date)[:4])
         artwork_source = "apple_catalog_exact_original_album" if artwork else ""
@@ -323,7 +342,8 @@ def resolve_audd_payload(payload, client=None, cache_path=None):
         isrc=isrc, musicbrainz_recording_id=recording.get("id") or "",
         selection_reason="official original album; standard original-year edition with front art preferred" if release_id else "Apple exact-track album match; standard edition preferred" if apple_track else "provider metadata fallback",
     )
-    if cache_file and cache_key and not cached and release_id:
+    if (cache_file and cache_key and release_id
+            and (not cached or cached.get("artwork_url", "") != resolved.artwork_url)):
         cache[cache_key] = {
             key: value for key, value in resolved.to_dict().items()
             if key in {"album", "album_year", "album_release_date", "album_type",
