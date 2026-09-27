@@ -1,3 +1,8 @@
+# 0.10.2
+
+- Retain a configurable rolling cache of up to five failed automatic-recognition WAV samples in Home Assistant media, with timestamped JSON sidecars and oldest-first eviction; successful samples are discarded.
+- Set `failed_sample_retention` to 0 to disable archiving.
+
 # 0.10.1
 
 - Require live audio to exceed the configured playback start threshold before starting or restarting a recognition sample after a quiet passage.
