@@ -10,6 +10,8 @@ import sys
 import tempfile
 import time
 
+from diagnostics import exception_details, log_event
+
 
 def levels(pcm: bytes) -> tuple[float, float]:
     samples = array("h")
@@ -31,7 +33,8 @@ def select_source(configured: str) -> str:
     )
     sources = json.loads(result.stdout)
     available = [item["name"] for item in sources if not item["name"].endswith(".monitor")]
-    print("Available recording inputs: " + ", ".join(available), flush=True)
+    log_event("recording_inputs_discovered", available_inputs=available,
+              configured_source=configured)
     if configured != "auto":
         if configured not in available:
             raise RuntimeError(f"Configured audio source is missing: {configured}")
@@ -88,7 +91,10 @@ def run_meter(options: dict, publisher, manual=None, automatic=None) -> None:
         process = None
         try:
             source = select_source(configured)
-            print(f"Monitoring USB input: {source}; recognition {'automatic' if automatic else 'on manual command'}", flush=True)
+            log_event("audio_monitor_started", source=source,
+                      mode="automatic" if automatic else "manual",
+                      sample_rate_hz=16000, channels=2, update_seconds=interval,
+                      signal_threshold_dbfs=threshold)
             with tempfile.TemporaryFile() as errors:
                 process = subprocess.Popen([
                     "ffmpeg", "-hide_banner", "-loglevel", "error", "-nostdin",
@@ -133,7 +139,8 @@ def run_meter(options: dict, publisher, manual=None, automatic=None) -> None:
             if process is not None:
                 stop_process(process)
             message = str(exc)
-            print(f"Audio meter error: {message}; retrying in 5 seconds", file=sys.stderr, flush=True)
+            log_event("audio_monitor_failed", level="ERROR", retry_in_seconds=5,
+                      **exception_details(exc))
             try:
                 for suffix, name in (("audio_level", "Turntable Audio Level"),
                                      ("audio_peak", "Turntable Audio Peak"),
@@ -143,5 +150,7 @@ def run_meter(options: dict, publisher, manual=None, automatic=None) -> None:
                     "friendly_name": "Turntable Audio Input Status", "last_error": message,
                 })
             except Exception as publish_error:
-                print(f"Could not publish meter error: {publish_error}", file=sys.stderr, flush=True)
+                log_event("audio_monitor_error_state_publish_failed", level="ERROR",
+                          **exception_details(publish_error))
             time.sleep(5)
+
