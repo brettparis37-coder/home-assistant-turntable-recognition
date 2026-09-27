@@ -9,11 +9,14 @@ from auto_recognition import AutomaticRecognition, SessionDetector, timing
 class Publisher:
     def __init__(self):
         self.tracks, self.states, self.statuses = [], {}, []
+        self.status_details = []
         self.cleared = 0
     def clear_track(self): self.cleared += 1
     def set_state(self, suffix, state, attrs): self.states[suffix] = (state, attrs)
-    def publish_status(self, status, *args): self.statuses.append(status)
-    def publish_track(self, track, *args): self.tracks.append(track)
+    def publish_status(self, status, *args, details=None):
+        self.statuses.append(status)
+        self.status_details.append(details or {})
+    def publish_track(self, track, *args, diagnostics=None): self.tracks.append(track)
 
 
 class Limiter:
@@ -88,6 +91,24 @@ class AutoTests(unittest.TestCase):
         for expected in (30, 60, 120, 240, 300, 300):
             self.result(None, "No song was recognized")
             self.assertEqual(self.worker.due, self.now + expected)
+        self.assertEqual(self.worker.last_attempt_outcome, "no_match")
+        self.assertEqual(self.worker.last_attempt_error, "No song was recognized")
+        self.assertEqual(self.publisher.status_details[-1]["retry_seconds"], 300)
+
+    def test_status_includes_last_attempt_diagnostics(self):
+        self.worker.attempt_count = 3
+        self.worker.last_attempt_id = 3
+        self.worker.last_attempt_at = "2026-09-27T21:00:00+00:00"
+        self.worker.last_attempt_outcome = "no_match"
+        self.worker.last_attempt_error = "No song was recognized"
+        self.worker.failures = 2
+        self.worker.due = self.now + 60
+        self.worker.status("no_match", self.worker.last_attempt_error)
+        details = self.publisher.status_details[-1]
+        self.assertEqual(details["last_attempt_id"], 3)
+        self.assertEqual(details["last_attempt_outcome"], "no_match")
+        self.assertEqual(details["consecutive_failures"], 2)
+        self.assertEqual(details["retry_seconds"], 60)
 
     def test_session_end_discards_late_response(self):
         old = self.worker.generation
@@ -131,3 +152,4 @@ class AutoTests(unittest.TestCase):
 
 
 if __name__ == '__main__': unittest.main()
+
