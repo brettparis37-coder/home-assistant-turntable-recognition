@@ -74,6 +74,45 @@ def choose_recording(result):
     return max(entries, key=lambda item: float(item.get("score") or 0), default={})
 
 
+def search_recording(client, artist, title):
+    """Find a MusicBrainz recording when AudD did not include a recording MBID."""
+    if not artist or not title:
+        return {}
+
+    def quote(value):
+        return '"' + str(value).replace("\\", "\\\\").replace('"', '\\"') + '"'
+
+    query = f"recording:{quote(title)} AND artist:{quote(artist)}"
+    url = "https://musicbrainz.org/ws/2/recording/?" + urllib.parse.urlencode({
+        "query": query, "limit": 10, "fmt": "json",
+    })
+    entries = client.get(url, musicbrainz=True).get("recordings") or []
+    wanted_title = normalized_name(title)
+    wanted_artist = normalized_name(artist)
+    matches = []
+    for entry in entries:
+        credit = "".join(
+            str(part.get("name") or "") + str(part.get("joinphrase") or "")
+            for part in entry.get("artist-credit") or [] if isinstance(part, dict)
+        )
+        if normalized_name(entry.get("title")) != wanted_title:
+            continue
+        if wanted_artist not in normalized_name(credit):
+            continue
+        matches.append(entry)
+    return max(matches, key=lambda item: float(item.get("score") or 0), default={})
+
+
+def lookup_recording(client, recording_id):
+    if not recording_id:
+        return {}
+    query = urllib.parse.urlencode({"inc": "releases+isrcs", "fmt": "json"})
+    return client.get(
+        f"https://musicbrainz.org/ws/2/recording/{recording_id}?{query}",
+        musicbrainz=True,
+    )
+
+
 def choose_album_group(recording):
     groups = {}
     for release in recording.get("releases") or []:
@@ -153,12 +192,46 @@ def apple_album_art(client, artist, album, album_year):
     return artwork.replace("/100x100bb.", "/600x600bb.")
 
 
+def apple_track_match(client, artist, title, album, album_year):
+    """Find an exact Apple catalog track and prefer its original album edition."""
+    query = urllib.parse.urlencode({
+        "term": f"{artist} {title}", "entity": "song", "limit": 50, "country": "US",
+    })
+    results = client.get(f"https://itunes.apple.com/search?{query}").get("results") or []
+    wanted_artist = normalized_name(artist)
+    wanted_title = normalized_name(title)
+    wanted_album = normalized_name(album)
+    candidates = []
+    for item in results:
+        if normalized_name(item.get("artistName")) != wanted_artist:
+            continue
+        if normalized_name(item.get("trackName")) != wanted_title:
+            continue
+        collection = str(item.get("collectionName") or "")
+        if not collection:
+            continue
+        edition = any(word in collection.casefold() for word in EDITION_WORDS)
+        same_album = bool(wanted_album and normalized_name(collection) == wanted_album)
+        same_year = str(item.get("releaseDate") or "").startswith(str(album_year or "")[:4])
+        is_album = str(item.get("collectionType") or "").casefold() == "album"
+        rank = (not same_album, edition, not is_album, not same_year,
+                str(item.get("releaseDate") or "9999"), str(item.get("collectionId") or ""))
+        candidates.append((rank, item))
+    if not candidates:
+        return {}
+    return min(candidates, key=lambda pair: pair[0])[1]
+
+
 def resolve_audd_payload(payload, client=None, cache_path=None):
     client = client or JsonClient()
     result = payload.get("result") or {}
     spotify = result.get("spotify") or {}
     apple = result.get("apple_music") or {}
     recording = choose_recording(result)
+    if not recording.get("id"):
+        recording = search_recording(client, result.get("artist") or "", result.get("title") or "")
+    if recording.get("id") and not recording.get("releases"):
+        recording = lookup_recording(client, recording["id"])
     group = choose_album_group(recording)
 
     spotify_isrc = (spotify.get("external_ids") or {}).get("isrc")
@@ -201,6 +274,19 @@ def resolve_audd_payload(payload, client=None, cache_path=None):
     if not artwork and album_name:
         artwork = apple_album_art(client, result.get("artist") or "", album_name, str(album_date)[:4])
         artwork_source = "apple_catalog_exact_original_album" if artwork else ""
+    apple_track = {}
+    if not artwork:
+        apple_track = apple_track_match(
+            client, result.get("artist") or "", result.get("title") or "",
+            album_name, str(album_date)[:4],
+        )
+        if apple_track:
+            artwork = str(apple_track.get("artworkUrl100") or "").replace("/100x100bb.", "/600x600bb.")
+            artwork_source = "apple_catalog_exact_track_album" if artwork else ""
+            if apple_track.get("collectionName"):
+                album_name = str(apple_track["collectionName"])
+            if apple_track.get("releaseDate"):
+                album_date = str(apple_track["releaseDate"])
     if not artwork and release_id:
         artwork = archive_front_url(client, release_id)
         artwork_source = "musicbrainz_release_via_internet_archive" if artwork else ""
@@ -210,11 +296,13 @@ def resolve_audd_payload(payload, client=None, cache_path=None):
         artwork = first_value(
             spotify_images[0].get("url") if spotify_images else "",
             apple_art.replace("{w}", "600").replace("{h}", "600") if apple_art else "",
-            f"{result.get('song_link')}?thumb" if result.get("song_link") else "",
         ) or ""
+        # AudD's song_link is a page (often a YouTube watch URL), not an image.
+        # Never pass it to the Tidbyt renderer as album artwork.
         artwork_source = "provider_fallback" if artwork else ""
 
-    duration_ms = first_value(spotify.get("duration_ms"), apple.get("durationInMillis"), recording.get("length"))
+    duration_ms = first_value(spotify.get("duration_ms"), apple.get("durationInMillis"),
+                              apple_track.get("trackTimeMillis"), recording.get("length"))
     duration = float(duration_ms) / 1000 if duration_ms else None
     position = parse_timecode(result.get("timecode"))
     if duration is not None and position is not None and position >= duration:
@@ -229,7 +317,7 @@ def resolve_audd_payload(payload, client=None, cache_path=None):
         album_release_group_id=release_group_id, album_release_id=release_id,
         artwork_url=artwork, artwork_source=artwork_source,
         duration_seconds=duration, position_seconds=position,
-        timing_source="spotify" if spotify.get("duration_ms") else "apple_music" if apple.get("durationInMillis") else "musicbrainz" if recording.get("length") else "",
+        timing_source="spotify" if spotify.get("duration_ms") else "apple_music" if apple.get("durationInMillis") or apple_track.get("trackTimeMillis") else "musicbrainz" if recording.get("length") else "",
         isrc=isrc, musicbrainz_recording_id=recording.get("id") or "",
         selection_reason="official original album; standard original-year edition with front art preferred" if release_id else "provider metadata fallback",
     )
@@ -245,3 +333,4 @@ def resolve_audd_payload(payload, client=None, cache_path=None):
         temporary.write_text(json.dumps(cache, indent=2), encoding="utf-8")
         temporary.replace(cache_file)
     return resolved
+
