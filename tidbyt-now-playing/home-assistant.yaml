@@ -1,32 +1,116 @@
 script:
   show_turntable_now_playing:
-    alias: Show Turntable Now Playing
+    alias: Keep Turntable Now Playing on Tidbyt
     icon: mdi:album
     mode: restart
     sequence:
+      - repeat:
+          while:
+            - condition: template
+              value_template: >-
+                {{ is_state('sensor.turntable_playback_state', 'playing')
+                   and state_attr('sensor.turntable_now_playing', 'recognition_status') in ['mock', 'recognized']
+                   and states('sensor.turntable_now_playing') not in ['', 'Nothing playing', 'unknown', 'unavailable'] }}
+          sequence:
+            - variables:
+                tidbyt_arguments: >-
+                  artist={{ state_attr('sensor.turntable_now_playing', 'artist') | default('Unknown artist', true) | replace(';', ',') | replace('=', '-') }};title={{ state_attr('sensor.turntable_now_playing', 'title') | default('Unknown song', true) | replace(';', ',') | replace('=', '-') }};album={{ state_attr('sensor.turntable_now_playing', 'album') | default('', true) | replace(';', ',') | replace('=', '-') }};year={{ state_attr('sensor.turntable_now_playing', 'year') | default('', true) | replace(';', ',') | replace('=', '-') }};artwork_url={{ state_attr('sensor.turntable_now_playing', 'artwork_url') | default('', true) | replace(';', '') }}
+            - action: tidbytassistant.push
+              data:
+                contenttype: custom
+                customcontent: vinylnowplaying
+                contentid: vinylnowplaying
+                publishtype: foreground
+                devicename:
+                  - living_room
+                arguments: "{{ tidbyt_arguments }};page=both"
+            - delay: "00:00:20"
+
+  turntable_tidbyt_volume_override:
+    alias: Temporarily Override Turntable Tidbyt with Volume
+    icon: mdi:volume-high
+    mode: restart
+    sequence:
+      - action: script.turn_off
+        target:
+          entity_id: script.show_turntable_now_playing
       - variables:
-          tidbyt_arguments: >-
-            artist={{ state_attr('sensor.turntable_now_playing', 'artist') | default('Unknown artist', true) | replace(';', ',') | replace('=', '-') }};title={{ state_attr('sensor.turntable_now_playing', 'title') | default('Unknown song', true) | replace(';', ',') | replace('=', '-') }};album={{ state_attr('sensor.turntable_now_playing', 'album') | default('', true) | replace(';', ',') | replace('=', '-') }};year={{ state_attr('sensor.turntable_now_playing', 'year') | default('', true) | replace(';', ',') | replace('=', '-') }};artwork_url={{ state_attr('sensor.turntable_now_playing', 'artwork_url') | default('', true) | replace(';', '') }}
+          group_average: >-
+            {% set members = state_attr('media_player.turn_table_turn_table', 'group_members')
+              | default(['media_player.turn_table_turn_table'], true) %}
+            {% set ns = namespace(total=0, count=0) %}
+            {% for player in members %}
+              {% set level = state_attr(player, 'volume_level') %}
+              {% if level is number %}
+                {% set ns.total = ns.total + level %}
+                {% set ns.count = ns.count + 1 %}
+              {% endif %}
+            {% endfor %}
+            {{ ((ns.total / ns.count) * 100) | round(0) | int if ns.count > 0 else 0 }}
       - action: tidbytassistant.push
         data:
           contenttype: custom
-          customcontent: vinylnowplaying
+          customcontent: sonosvolume
+          contentid: sonosvolume
           publishtype: foreground
           devicename:
             - living_room
-          arguments: "{{ tidbyt_arguments }};page=details"
-      - delay: "00:00:10"
+          arguments: "volume={{ group_average }}"
+      - delay:
+          milliseconds: 250
+      - variables:
+          group_average: >-
+            {% set members = state_attr('media_player.turn_table_turn_table', 'group_members')
+              | default(['media_player.turn_table_turn_table'], true) %}
+            {% set ns = namespace(total=0, count=0) %}
+            {% for player in members %}
+              {% set level = state_attr(player, 'volume_level') %}
+              {% if level is number %}
+                {% set ns.total = ns.total + level %}
+                {% set ns.count = ns.count + 1 %}
+              {% endif %}
+            {% endfor %}
+            {{ ((ns.total / ns.count) * 100) | round(0) | int if ns.count > 0 else 0 }}
       - action: tidbytassistant.push
         data:
           contenttype: custom
-          customcontent: vinylnowplaying
+          customcontent: sonosvolume
+          contentid: sonosvolume
           publishtype: foreground
           devicename:
             - living_room
-          arguments: "{{ tidbyt_arguments }};page=album"
+          arguments: "volume={{ group_average }}"
+      - delay: "00:00:03"
+      - choose:
+          - conditions:
+              - condition: template
+                value_template: >-
+                  {{ is_state('sensor.turntable_playback_state', 'playing')
+                     and state_attr('sensor.turntable_now_playing', 'recognition_status') in ['mock', 'recognized']
+                     and states('sensor.turntable_now_playing') not in ['', 'Nothing playing', 'unknown', 'unavailable'] }}
+            sequence:
+              - action: tidbytassistant.delete
+                data:
+                  contentid: sonosvolume
+                  devicename:
+                    - living_room
+              - action: script.turn_on
+                target:
+                  entity_id: script.show_turntable_now_playing
+        default:
+          - action: tidbytassistant.delete
+            data:
+              contentid: sonosvolume
+              devicename:
+                - living_room
+          - action: tidbytassistant.delete
+            data:
+              contentid: vinylnowplaying
+              devicename:
+                - living_room
 
 automation:
-  - alias: Turntable Recognition - Show New Song on Tidbyt
+  - alias: Turntable Recognition - Start Tidbyt Now Playing
     id: turntable_recognition_show_new_song_on_tidbyt
     mode: restart
     triggers:
@@ -36,13 +120,73 @@ automation:
       - condition: template
         value_template: >-
           {{ trigger.to_state is not none
-             and trigger.to_state.state not in ['', 'unknown', 'unavailable']
-             and trigger.to_state.attributes.get('recognition_status') in ['mock', 'recognized'] }}
+             and is_state('sensor.turntable_playback_state', 'playing')
+             and trigger.to_state.attributes.get('recognition_status') in ['mock', 'recognized']
+             and trigger.to_state.state not in ['', 'Nothing playing', 'unknown', 'unavailable']
+             and not is_state('script.turntable_tidbyt_volume_override', 'on') }}
       - condition: template
         value_template: >-
           {{ trigger.from_state is none
              or trigger.from_state.state != trigger.to_state.state
-             or trigger.from_state.attributes.get('artist') != trigger.to_state.attributes.get('artist') }}
+             or trigger.from_state.attributes.get('artist') != trigger.to_state.attributes.get('artist')
+             or trigger.from_state.attributes.get('album') != trigger.to_state.attributes.get('album') }}
     actions:
-      - action: script.show_turntable_now_playing
+      - action: script.turn_on
+        target:
+          entity_id: script.show_turntable_now_playing
+
+  - alias: Turntable Recognition - Remove Tidbyt Now Playing When Idle
+    id: turntable_recognition_remove_tidbyt_when_idle
+    mode: restart
+    triggers:
+      - trigger: state
+        entity_id: sensor.turntable_playback_state
+        from: playing
+        to: idle
+    conditions:
+      - condition: template
+        value_template: >-
+          {{ not (is_state('sensor.turntable_playback_state', 'playing')
+             and state_attr('sensor.turntable_now_playing', 'recognition_status') in ['mock', 'recognized']
+             and states('sensor.turntable_now_playing') not in ['', 'Nothing playing', 'unknown', 'unavailable']) }}
+    actions:
+      - action: script.turn_off
+        target:
+          entity_id: script.show_turntable_now_playing
+      - action: tidbytassistant.delete
+        data:
+          contentid: vinylnowplaying
+          devicename:
+            - living_room
+      - if:
+          - condition: template
+            value_template: "{{ not is_state('script.turntable_tidbyt_volume_override', 'on') }}"
+        then:
+          - action: tidbytassistant.delete
+            data:
+              contentid: sonosvolume
+              devicename:
+                - living_room
+
+  - alias: Live Sonos Group Volume on Living Room Tidbyt
+    id: '1790130859185'
+    mode: restart
+    triggers:
+      - trigger: state
+        entity_id:
+          - media_player.turn_table_turn_table
+          - media_player.living_room_living_room
+          - media_player.kitchen_kitchen
+          - media_player.office_office
+          - media_player.portable
+        attribute: volume_level
+    conditions:
+      - condition: template
+        value_template: >-
+          {{ trigger.entity_id in (state_attr('media_player.turn_table_turn_table', 'group_members')
+             | default(['media_player.turn_table_turn_table'], true)) }}
+    actions:
+      - action: script.turn_on
+        target:
+          entity_id: script.turntable_tidbyt_volume_override
 
