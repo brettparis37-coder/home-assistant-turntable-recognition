@@ -1,9 +1,13 @@
+# 0.8.1
+
+- Discard cached YouTube song-page URLs that were previously stored as album artwork, then resolve and cache a direct catalog cover URL.
+
 # 0.8.0
 
 - Search MusicBrainz by exact artist and track title when AudD does not return a recording ID, then use the matching recording's official album releases.
-- Search Apple's catalog for an exact track match when artwork is missing, prefer its matching original album, and fill duration when available.
+- Search Apple's catalog for an exact track match when album artwork is still missing, preferring its matching original album and filling duration where available.
 - Stop treating AudD song-page links, including YouTube watch URLs, as album artwork.
-- Push Tidbyt song details and album views as separate ten-second screens and start the display when recognition completes or playback becomes active.
+- Push Tidbyt song details and album views as separate ten-second screens and start the display when either recognition completes or playback becomes active.
 
 # 0.7.0
 
