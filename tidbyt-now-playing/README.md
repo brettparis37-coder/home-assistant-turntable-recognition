@@ -34,19 +34,19 @@ in YAML. Replace the previous `show_turntable_now_playing` script and the old
 automations in those files.
 
 The controller starts when both `sensor.turntable_playback_state` is `playing`
-and `sensor.turntable_now_playing` contains a recognized track. It refreshes a
-combined 20-second details-and-cover animation on the living-room Tidbyt until
-playback ends. A new recognized track restarts it with the new metadata.
+and `sensor.turntable_now_playing` contains a recognized track. It explicitly
+pushes the song details page for ten seconds, then the album page for ten
+seconds, and repeats until playback ends. A new recognized track restarts it
+with the new metadata.
 
-The combined animation shows the scrolling artist/song view for ten seconds,
-then the album cover and scrolling album details for ten seconds. It is
-refreshed every twenty seconds while playback remains active. Only clockwise or
-counterclockwise events from the Hue rotary dial interrupt that loop; changing
-volume from a dashboard slider does not. The volume script shows the current
-group volume and waits three seconds after the latest dial event. If a
-recognized track is still playing, it resumes the now-playing loop; otherwise
-it removes both temporary apps and restores the normal Tidbyt rotation. No timer
-helper is required.
+The details and album pages are separate pushes using the same Tidbyt content
+ID. This makes each ten-second view explicit instead of depending on a nested
+animation sequence. Only clockwise or counterclockwise events from the Hue
+rotary dial interrupt that loop; changing volume from a dashboard slider does
+not. The volume script shows the current group volume and waits three seconds
+after the latest dial event. If a recognized track is still playing, it resumes
+the now-playing loop; otherwise it removes both temporary apps and restores the
+normal Tidbyt rotation. No timer helper is required.
 
 Use `page=details` or `page=album` when testing a single view from Developer
 Tools. The album view has a 32×32 cover on the left with a scrolling album name

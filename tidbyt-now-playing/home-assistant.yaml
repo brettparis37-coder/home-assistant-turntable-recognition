@@ -14,7 +14,8 @@ script:
           sequence:
             - variables:
                 tidbyt_arguments: >-
-                  artist={{ state_attr('sensor.turntable_now_playing', 'artist') | default('Unknown artist', true) | replace(';', ',') | replace('=', '-') }};title={{ state_attr('sensor.turntable_now_playing', 'title') | default('Unknown song', true) | replace(';', ',') | replace('=', '-') }};album={{ state_attr('sensor.turntable_now_playing', 'album') | default('', true) | replace(';', ',') | replace('=', '-') }};year={{ state_attr('sensor.turntable_now_playing', 'year') | default('', true) | replace(';', ',') | replace('=', '-') }};artwork_url={{ state_attr('sensor.turntable_now_playing', 'artwork_url') | default('', true) | replace(';', '') }}
+                  {% set art = state_attr('sensor.turntable_now_playing', 'artwork_url') | default('', true) %}
+                  artist={{ state_attr('sensor.turntable_now_playing', 'artist') | default('Unknown artist', true) | replace(';', ',') | replace('=', '-') }};title={{ state_attr('sensor.turntable_now_playing', 'title') | default('Unknown song', true) | replace(';', ',') | replace('=', '-') }};album={{ state_attr('sensor.turntable_now_playing', 'album') | default('', true) | replace(';', ',') | replace('=', '-') }};year={{ state_attr('sensor.turntable_now_playing', 'year') | default('', true) | replace(';', ',') | replace('=', '-') }};artwork_url={{ '' if 'youtu.be/' in art or 'youtube.com/' in art else art | replace(';', '') }}
             - action: tidbytassistant.push
               data:
                 contenttype: custom
@@ -23,8 +24,25 @@ script:
                 publishtype: foreground
                 devicename:
                   - living_room
-                arguments: "{{ tidbyt_arguments }};page=both"
-            - delay: "00:00:20"
+                arguments: "{{ tidbyt_arguments }};page=details"
+            - delay: "00:00:10"
+            - if:
+                - condition: template
+                  value_template: >-
+                    {{ is_state('sensor.turntable_playback_state', 'playing')
+                       and state_attr('sensor.turntable_now_playing', 'recognition_status') in ['mock', 'recognized']
+                       and states('sensor.turntable_now_playing') not in ['', 'Nothing playing', 'unknown', 'unavailable'] }}
+              then:
+                - action: tidbytassistant.push
+                  data:
+                    contenttype: custom
+                    customcontent: vinylnowplaying
+                    contentid: vinylnowplaying
+                    publishtype: foreground
+                    devicename:
+                      - living_room
+                    arguments: "{{ tidbyt_arguments }};page=album"
+                - delay: "00:00:10"
 
   turntable_tidbyt_volume_override:
     alias: Temporarily Override Turntable Tidbyt with Volume
@@ -116,20 +134,24 @@ automation:
     triggers:
       - trigger: state
         entity_id: sensor.turntable_now_playing
+      - trigger: state
+        entity_id: sensor.turntable_playback_state
+        to: playing
     conditions:
       - condition: template
         value_template: >-
-          {{ trigger.to_state is not none
-             and is_state('sensor.turntable_playback_state', 'playing')
-             and trigger.to_state.attributes.get('recognition_status') in ['mock', 'recognized']
-             and trigger.to_state.state not in ['', 'Nothing playing', 'unknown', 'unavailable']
+          {{ is_state('sensor.turntable_playback_state', 'playing')
+             and state_attr('sensor.turntable_now_playing', 'recognition_status') in ['mock', 'recognized']
+             and states('sensor.turntable_now_playing') not in ['', 'Nothing playing', 'unknown', 'unavailable']
              and not is_state('script.turntable_tidbyt_volume_override', 'on') }}
       - condition: template
         value_template: >-
-          {{ trigger.from_state is none
+          {{ trigger.entity_id != 'sensor.turntable_now_playing'
+             or trigger.from_state is none
              or trigger.from_state.state != trigger.to_state.state
              or trigger.from_state.attributes.get('artist') != trigger.to_state.attributes.get('artist')
-             or trigger.from_state.attributes.get('album') != trigger.to_state.attributes.get('album') }}
+             or trigger.from_state.attributes.get('album') != trigger.to_state.attributes.get('album')
+             or trigger.from_state.attributes.get('recognition_status') != trigger.to_state.attributes.get('recognition_status') }}
     actions:
       - action: script.turn_on
         target:
