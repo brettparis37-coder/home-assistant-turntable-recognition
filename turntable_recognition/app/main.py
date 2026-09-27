@@ -21,6 +21,7 @@ from manual_recognition import ManualRecognition
 from auto_recognition import AutomaticRecognition, timing
 from album_resolver import resolve_audd_payload
 from discogs_matcher import DiscogsMatcher, apply_match
+from diagnostics import exception_details, log_event
 
 
 OPTIONS_PATH = Path("/data/options.json")
@@ -83,6 +84,7 @@ class AudDProvider(Provider):
         self.options = options or {}
 
     def recognize(self, source: str, source_is_url: bool) -> Track:
+        request_started = time.monotonic()
         data = {
             "api_token": self.token,
             "return": "spotify,apple_music,musicbrainz",
@@ -103,12 +105,27 @@ class AudDProvider(Provider):
                 )
         response.raise_for_status()
         payload = response.json()
+        result = payload.get("result") or {}
+        log_event("audd_response_received", status=payload.get("status"),
+                  latency_seconds=round(time.monotonic() - request_started, 3),
+                  has_match=bool(result), request_kind="url" if source_is_url else "audio_upload",
+                  recognized_artist=result.get("artist"), recognized_title=result.get("title"),
+                  timecode=result.get("timecode"),
+                  response_fields=sorted(payload.keys()))
         if payload.get("status") != "success":
             error = payload.get("error") or {}
-            raise RecognitionError(error.get("error_message") or "AudD request failed")
-        result = payload.get("result")
+            log_event("audd_api_rejected_request", level="ERROR",
+                      status=payload.get("status"), error_code=error.get("error_code"),
+                      error_message=error.get("error_message"),
+                      note="API token and audio payload are intentionally omitted")
+            raise RecognitionError(
+                f"AudD API status={payload.get('status')!r}; "
+                f"code={error.get('error_code')!r}; message={error.get('error_message') or 'no message'}"
+            )
         if not result:
-            raise RecognitionError("No song was recognized")
+            log_event("audd_no_match", level="WARNING", result="null",
+                      explanation="AudD returned no track match and does not return alternate candidate matches")
+            raise RecognitionError("No song was recognized (AudD returned result=null; no alternatives were provided)")
 
         release_date = str(result.get("release_date") or "")
         spotify = result.get("spotify") or {}
@@ -142,12 +159,16 @@ class AudDProvider(Provider):
         )
         discogs_match = None
         if self.options.get("discogs_enabled", False):
+            matcher = DiscogsMatcher(str(self.options.get("discogs_database_path") or "/share/home_apps.sqlite3"))
             try:
-                discogs_match = DiscogsMatcher(str(self.options.get("discogs_database_path") or "/share/home_apps.sqlite3")).match(
-                    base.artist, base.title
-                )
+                discogs_match = matcher.match(base.artist, base.title)
             except Exception as exc:
-                print(f"Discogs collection match unavailable; using AudD metadata: {exc}", file=sys.stderr, flush=True)
+                log_event("discogs_match_failed", level="ERROR", artist=base.artist, title=base.title,
+                          **exception_details(exc))
+            if not discogs_match:
+                log_event("discogs_match_not_found", level="WARNING", artist=base.artist, title=base.title,
+                          diagnostics=matcher.last_diagnostics,
+                          fallback="continue with AudD and catalog metadata")
         if discogs_match:
             apply_match(base, discogs_match, self.options)
             base.release_date = base.release_year or base.release_date
@@ -155,7 +176,12 @@ class AudDProvider(Provider):
             base.album_type = "Album"
             base.isrc = str(((spotify.get("external_ids") or {}).get("isrc")) or apple_music.get("isrc") or "")
             base.timing_source = "spotify" if spotify.get("duration_ms") else "apple_music" if apple_music.get("durationInMillis") else ""
-            print(f"Matched cached Discogs release: {base.album} ({base.release_year or 'year unknown'})", flush=True)
+            log_event("discogs_match_selected", artist=base.artist, title=base.title,
+                      album=base.album, release_year=base.release_year, master_year=base.master_year,
+                      release_id=base.discogs_release_id, master_id=base.discogs_master_id,
+                      artwork_source=base.artwork_source,
+                      selection_reason=base.selection_reason,
+                      match_diagnostics=matcher.last_diagnostics)
         else:
             try:
                 resolved = resolve_audd_payload(payload, cache_path=ALBUM_CACHE_PATH)
@@ -170,9 +196,13 @@ class AudDProvider(Provider):
                     value = getattr(resolved, field)
                     if value not in (None, ""):
                         setattr(base, field, value)
-                print(f"Album metadata: {base.album} ({base.year}); artwork={base.artwork_source}", flush=True)
+                log_event("album_metadata_resolved", album=base.album, year=base.year,
+                          artwork_source=base.artwork_source, timing_source=base.timing_source,
+                          duration_seconds=base.duration_seconds, selection_reason=base.selection_reason)
             except Exception as exc:
-                print(f"Album metadata enrichment unavailable; using AudD providers: {exc}", file=sys.stderr, flush=True)
+                log_event("album_metadata_enrichment_failed", level="WARNING",
+                          fallback="use AudD provider metadata",
+                          **exception_details(exc))
             base.release_year = base.year
             base.release_artwork_url = base.artwork_url
         return base
@@ -279,7 +309,8 @@ class HomeAssistantPublisher:
         )
         response.raise_for_status()
 
-    def publish_track(self, track: Track, status: str, day_count: int, month_count: int) -> None:
+    def publish_track(self, track: Track, status: str, day_count: int, month_count: int,
+                      diagnostics: dict[str, Any] | None = None) -> None:
         attributes = asdict(track)
         attributes.update(
             {
@@ -300,7 +331,7 @@ class HomeAssistantPublisher:
         }
         for suffix, (state, name, icon) in simple.items():
             self.set_state(suffix, state, {"friendly_name": name, "icon": icon})
-        self.publish_status(status, day_count, month_count)
+        self.publish_status(status, day_count, month_count, details=diagnostics)
 
     def clear_track(self) -> None:
         self.set_state("now_playing", "Nothing playing", {
@@ -312,17 +343,20 @@ class HomeAssistantPublisher:
         for suffix in ("artist", "title", "album", "year"):
             self.set_state(suffix, "unknown", {"friendly_name": "Turntable " + suffix.title()})
 
-    def publish_status(self, status: str, day_count: int, month_count: int, error: str = "") -> None:
+    def publish_status(self, status: str, day_count: int, month_count: int, error: str = "",
+                       details: dict[str, Any] | None = None) -> None:
+        attributes = {
+            "friendly_name": "Turntable Recognition Status",
+            "icon": "mdi:waveform",
+            "requests_today": day_count,
+            "requests_this_month": month_count,
+            "last_error": error,
+        }
+        attributes.update(details or {})
         self.set_state(
             "recognition_status",
             status,
-            {
-                "friendly_name": "Turntable Recognition Status",
-                "icon": "mdi:waveform",
-                "requests_today": day_count,
-                "requests_this_month": month_count,
-                "last_error": error,
-            },
+            attributes,
         )
         if self.limiter:
             details = self.limiter.details()
@@ -408,6 +442,13 @@ def capture_simulated_usb(options: dict[str, Any]) -> str:
 def main() -> int:
     options = load_options()
     mode = options.get("input_mode", "mock")
+    log_event("app_starting", input_mode=mode, provider=options.get("provider", "audd"),
+              audio_source=options.get("audio_source", "auto") if mode in {"usb_auto", "usb_meter"} else None,
+              discogs_enabled=bool(options.get("discogs_enabled", False)),
+              discogs_database_path=options.get("discogs_database_path", "/share/home_apps.sqlite3")
+              if options.get("discogs_enabled", False) else None,
+              sample_seconds=options.get("sample_seconds", 12),
+              audd_token_configured=bool(options.get("audd_api_token")))
     limiter = UsageLimiter(
         int(options.get("max_requests_per_day", 100)),
         int(options.get("max_requests_per_month", 1000)),
@@ -430,7 +471,7 @@ def main() -> int:
     try:
         if mode == "mock":
             publisher.publish_track(mock_track(options), "mock", day_count, month_count)
-            print("Published mock turntable metadata", flush=True)
+            log_event("mock_track_published", artist=options.get("mock_artist"), title=options.get("mock_title"))
         else:
             if options.get("provider") != "audd":
                 raise RecognitionError(f"Unsupported provider: {options.get('provider')}")
@@ -453,16 +494,20 @@ def main() -> int:
             publisher.publish_status("recognizing", day_count, month_count)
             track = provider.recognize(source, source_is_url)
             publisher.publish_track(track, "recognized", day_count, month_count)
-            print(f"Recognized: {track.artist} - {track.title}", flush=True)
+            log_event("recognition_succeeded", artist=track.artist, title=track.title,
+                      album=track.album, provider=track.provider,
+                      artwork_source=track.artwork_source, timing_source=track.timing_source)
     except Exception as exc:
         day_count, month_count = limiter.counts()
         message = str(exc)
-        print(f"Recognition error: {message}", file=sys.stderr, flush=True)
+        log_event("recognition_failed", level="ERROR", status=message,
+                  **exception_details(exc, secret=str(options.get("audd_api_token", ""))))
         try:
             status = "api_limit_reached" if "AudD API limit reached" in message else "error"
             publisher.publish_status(status, day_count, month_count, message)
         except Exception as publish_exc:
-            print(f"Could not publish error status: {publish_exc}", file=sys.stderr, flush=True)
+            log_event("recognition_error_status_publish_failed", level="ERROR",
+                      **exception_details(publish_exc))
 
     while True:
         time.sleep(3600)
@@ -470,3 +515,4 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
+
