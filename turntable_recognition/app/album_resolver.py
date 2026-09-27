@@ -212,9 +212,10 @@ def apple_track_match(client, artist, title, album, album_year):
             continue
         edition = any(word in collection.casefold() for word in EDITION_WORDS)
         same_album = bool(wanted_album and normalized_name(collection) == wanted_album)
-        same_year = str(item.get("releaseDate") or "").startswith(str(album_year or "")[:4])
+        year = str(album_year or "")[:4]
+        same_year = bool(year and str(item.get("releaseDate") or "").startswith(year))
         is_album = str(item.get("collectionType") or "").casefold() == "album"
-        rank = (not same_album, edition, not is_album, not same_year,
+        rank = (edition, not same_album, not is_album, not same_year,
                 str(item.get("releaseDate") or "9999"), str(item.get("collectionId") or ""))
         candidates.append((rank, item))
     if not candidates:
@@ -313,13 +314,14 @@ def resolve_audd_payload(payload, client=None, cache_path=None):
         title=result.get("title") or "",
         recognized_version=first_value(recording.get("title"), spotify.get("name"), apple.get("name"), result.get("title")) or "",
         album=album_name,
-        album_year=str(album_date)[:4], album_release_date=str(album_date), album_type="Album" if release_group_id else "",
+        album_year=str(album_date)[:4], album_release_date=str(album_date),
+        album_type="Album" if release_group_id or apple_track.get("collectionType") == "Album" else "",
         album_release_group_id=release_group_id, album_release_id=release_id,
         artwork_url=artwork, artwork_source=artwork_source,
         duration_seconds=duration, position_seconds=position,
         timing_source="spotify" if spotify.get("duration_ms") else "apple_music" if apple.get("durationInMillis") or apple_track.get("trackTimeMillis") else "musicbrainz" if recording.get("length") else "",
         isrc=isrc, musicbrainz_recording_id=recording.get("id") or "",
-        selection_reason="official original album; standard original-year edition with front art preferred" if release_id else "provider metadata fallback",
+        selection_reason="official original album; standard original-year edition with front art preferred" if release_id else "Apple exact-track album match; standard edition preferred" if apple_track else "provider metadata fallback",
     )
     if cache_file and cache_key and not cached and release_id:
         cache[cache_key] = {
