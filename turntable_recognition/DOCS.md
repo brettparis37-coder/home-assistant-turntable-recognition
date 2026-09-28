@@ -58,7 +58,7 @@ The app does not edit your existing dashboard or install Tidbyt automations. Its
 
 Failed WAVs and timestamped JSON sidecars live under `/media/turntable_recognition/failed_samples`. Browse them in **Media → My media → turntable_recognition → failed_samples**. The media folder is authenticated in Home Assistant. The archive contains audio from your records; oldest samples are evicted when retention is exceeded.
 
-The latest three plays are persisted in the app's `/data/play_history.json`. The first entity is represented by `sensor.turntable_now_playing`; the other two are `sensor.turntable_previous_track` and `sensor.turntable_two_plays_ago`. Each history sensor exposes the full recognized Track metadata, including artwork/year selections, Discogs IDs, and `played_at`. Repeated same-song checks during one playback session do not count as new plays. Playing the same song in a later session does.
+The latest three plays are persisted in the app's `/data/play_history.json`. The newest entry backs `sensor.turntable_now_playing`; the next two entries back `sensor.turntable_previous_track` and `sensor.turntable_two_plays_ago`. Each history sensor exposes full Track metadata, including artwork/year selections, Discogs IDs, and `played_at`. Repeated same-song checks during one playback session do not count as new plays. Playing the same song in a later session does.
 
 ## Home Assistant entities
 
