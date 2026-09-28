@@ -1,5 +1,5 @@
 name: Turntable Recognition
-version: "0.10.2"
+version: "0.11.0"
 slug: turntable_recognition
 description: Recognize turntable music and publish now-playing entities to Home Assistant.
 startup: application
@@ -16,8 +16,7 @@ map:
     read_only: false
   - share:rw
 options:
-  provider: audd
-  input_mode: mock
+  input_mode: usb_auto
   audio_source: auto
   audio_threshold_dbfs: -50
   audio_update_seconds: 1
@@ -30,11 +29,8 @@ options:
   no_match_retry_seconds: 30
   song_end_buffer_seconds: 3
   audd_api_token: ""
-  test_audio_url: "https://audd.tech/example.mp3"
-  media_file: ""
-  sample_seconds: 12
+  sample_seconds: 15
   failed_sample_retention: 5
-  simulated_start_seconds: 0
   entity_prefix: turntable
   max_requests_per_day: 100
   max_requests_per_month: 1000
@@ -43,13 +39,8 @@ options:
   discogs_database_path: /share/home_apps.sqlite3
   discogs_artwork_preference: master
   discogs_year_preference: master
-  mock_artist: Fleetwood Mac
-  mock_title: Dreams
-  mock_album: Rumours
-  mock_year: "1977"
 schema:
-  provider: list(audd)
-  input_mode: list(mock|audio_url|media_file|simulated_usb|usb_meter|usb_auto)
+  input_mode: list(usb_auto|usb_meter)
   playback_start_dbfs: int(-100,0)
   playback_stop_dbfs: int(-100,0)
   playback_start_seconds: int(1,30)
@@ -62,11 +53,8 @@ schema:
   audio_threshold_dbfs: int(-100,0)
   audio_update_seconds: int(1,10)
   audd_api_token: password
-  test_audio_url: str
-  media_file: str
-  sample_seconds: int(5,12)
+  sample_seconds: int(5,20)
   failed_sample_retention: int(0,20)
-  simulated_start_seconds: int(0,86400)
   entity_prefix: match(^[a-z0-9_]+$)
   max_requests_per_day: int(1,10000)
   max_requests_per_month: int(1,100000)
@@ -75,8 +63,4 @@ schema:
   discogs_database_path: str
   discogs_artwork_preference: list(master|release)
   discogs_year_preference: list(master|release)
-  mock_artist: str
-  mock_title: str
-  mock_album: str
-  mock_year: str
 
