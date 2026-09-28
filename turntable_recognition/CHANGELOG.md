@@ -1,12 +1,15 @@
+# 0.11.0
+
+- Set USB automatic recognition as the default, remove mock, URL, media-file, and simulated-USB modes and their settings, and keep USB meter/manual recognition as the diagnostic mode.
+- Automatically remove saved settings left behind by the retired test modes when the updated app starts.
+- Raise the sample setting to a 15-second default with a 5–20-second range.
+- Persist the latest three recognized play events and publish the previous two as metadata-rich sensors; repeated polling within one session does not duplicate a play.
+- Move unit tests out of the runtime app image, document app options in grouped sections, and add a built-in-card dashboard view example.
+
 # 0.10.2
 
-- Retain a configurable rolling cache of up to five failed automatic-recognition WAV samples in Home Assistant media, with timestamped JSON sidecars and oldest-first eviction; successful samples are discarded.
-- Set `failed_sample_retention` to 0 to disable archiving.
-
-# 0.10.1
-
-- Require live audio to exceed the configured playback start threshold before starting or restarting a recognition sample after a quiet passage.
-- Log when capture waits for clear audio and when the threshold is crossed again.
+- Keep a configurable rolling cache of the last five failed automatic recognition WAV samples in Home Assistant media, with timestamped metadata sidecars; successful samples are discarded and the oldest files are evicted.
+- Allow Home Assistant Media browser access to the protected local-media files; set retention to 0 to disable sample archiving.
 
 # 0.10.0
 
