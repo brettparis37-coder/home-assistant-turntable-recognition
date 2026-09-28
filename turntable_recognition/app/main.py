@@ -7,8 +7,6 @@ import json
 import calendar
 import os
 import re
-import subprocess
-import sys
 import time
 from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
@@ -22,6 +20,7 @@ from auto_recognition import AutomaticRecognition, timing
 from album_resolver import resolve_audd_payload
 from discogs_matcher import DiscogsMatcher, apply_match
 from diagnostics import exception_details, log_event
+from play_history import PlayHistory
 
 
 OPTIONS_PATH = Path("/data/options.json")
@@ -296,6 +295,7 @@ class HomeAssistantPublisher:
     def __init__(self, prefix: str, limiter: UsageLimiter | None = None) -> None:
         self.prefix = prefix
         self.limiter = limiter
+        self.play_history = PlayHistory()
         token = os.environ.get("SUPERVISOR_TOKEN", "")
         self.headers = {
             "Authorization": f"Bearer {token}",
@@ -335,6 +335,31 @@ class HomeAssistantPublisher:
         for suffix, (state, name, icon) in simple.items():
             self.set_state(suffix, state, {"friendly_name": name, "icon": icon})
         self.publish_status(status, day_count, month_count, details=diagnostics)
+
+    def record_play(self, track: Track, session_id: str) -> None:
+        entries = self.play_history.record(asdict(track), session_id)
+        try:
+            self.publish_play_history(entries)
+        except Exception as exc:
+            log_event("play_history_publish_failed", level="WARNING",
+                      **exception_details(exc))
+
+    def publish_play_history(self, entries: list[dict[str, Any]] | None = None) -> None:
+        entries = entries if entries is not None else self.play_history.entries
+        for index, suffix in ((1, "previous_track"), (2, "two_plays_ago")):
+            if len(entries) >= index:
+                entry = dict(entries[index - 1])
+                state = entry.get("title") or "Unknown track"
+                entry.update({"friendly_name": "Turntable Previous Play" if index == 1
+                              else "Turntable Two Plays Ago", "icon": "mdi:record-circle"})
+            else:
+                state = "Nothing recorded"
+                entry = {
+                    "friendly_name": "Turntable Previous Play" if index == 1
+                    else "Turntable Two Plays Ago",
+                    "icon": "mdi:record-circle",
+                }
+            self.set_state(suffix, state, entry)
 
     def clear_track(self) -> None:
         self.set_state("now_playing", "Nothing playing", {
@@ -394,63 +419,15 @@ def load_options() -> dict[str, Any]:
     return json.loads(OPTIONS_PATH.read_text(encoding="utf-8"))
 
 
-def mock_track(options: dict[str, Any]) -> Track:
-    year = str(options.get("mock_year", ""))
-    return Track(
-        artist=str(options.get("mock_artist", "")),
-        title=str(options.get("mock_title", "")),
-        album=str(options.get("mock_album", "")),
-        release_date=year,
-        year=year,
-        provider="mock",
-    )
-
-
-def capture_simulated_usb(options: dict[str, Any]) -> str:
-    """Create the same short WAV that future USB capture will produce."""
-    configured = str(options.get("media_file", "")).lstrip("/")
-    source = Path("/media") / configured
-    if not source.is_file():
-        raise RecognitionError(f"Simulation source does not exist: {source}")
-    output = Path("/tmp/turntable-capture.wav")
-    command = [
-        "ffmpeg",
-        "-hide_banner",
-        "-loglevel",
-        "error",
-        "-y",
-        "-ss",
-        str(int(options.get("simulated_start_seconds", 0))),
-        "-i",
-        str(source),
-        "-t",
-        str(int(options.get("sample_seconds", 12))),
-        "-ac",
-        "1",
-        "-ar",
-        "44100",
-        str(output),
-    ]
-    try:
-        subprocess.run(command, check=True, capture_output=True, text=True, timeout=30)
-    except subprocess.CalledProcessError as exc:
-        raise RecognitionError(f"Simulated capture failed: {exc.stderr.strip()}") from exc
-    except subprocess.TimeoutExpired as exc:
-        raise RecognitionError("Simulated capture timed out") from exc
-    if not output.is_file() or output.stat().st_size == 0:
-        raise RecognitionError("Simulated capture produced no audio")
-    return str(output)
-
-
 def main() -> int:
     options = load_options()
-    mode = options.get("input_mode", "mock")
-    log_event("app_starting", input_mode=mode, provider=options.get("provider", "audd"),
+    mode = options.get("input_mode", "usb_auto")
+    log_event("app_starting", input_mode=mode, provider="audd",
               audio_source=options.get("audio_source", "auto") if mode in {"usb_auto", "usb_meter"} else None,
               discogs_enabled=bool(options.get("discogs_enabled", False)),
               discogs_database_path=options.get("discogs_database_path", "/share/home_apps.sqlite3")
               if options.get("discogs_enabled", False) else None,
-              sample_seconds=options.get("sample_seconds", 12),
+              sample_seconds=options.get("sample_seconds", 15),
               audd_token_configured=bool(options.get("audd_api_token")))
     limiter = UsageLimiter(
         int(options.get("max_requests_per_day", 100)),
@@ -458,8 +435,8 @@ def main() -> int:
         int(options.get("billing_cycle_day", 1)),
     )
     publisher = HomeAssistantPublisher(options.get("entity_prefix", "turntable"), limiter)
+    publisher.publish_play_history()
     provider_factory = lambda token: AudDProvider(token, options)
-    day_count, month_count = limiter.counts()
     if mode == "usb_auto":
         automatic = AutomaticRecognition(options, publisher, limiter, provider_factory)
         automatic.start()
@@ -471,49 +448,7 @@ def main() -> int:
         run_meter(options, publisher, manual)
         return 0
 
-    try:
-        if mode == "mock":
-            publisher.publish_track(mock_track(options), "mock", day_count, month_count)
-            log_event("mock_track_published", artist=options.get("mock_artist"), title=options.get("mock_title"))
-        else:
-            if options.get("provider") != "audd":
-                raise RecognitionError(f"Unsupported provider: {options.get('provider')}")
-            provider = AudDProvider(str(options.get("audd_api_token", "")), options)
-            if mode == "audio_url":
-                source = str(options.get("test_audio_url", ""))
-                source_is_url = True
-            elif mode == "media_file":
-                configured = str(options.get("media_file", "")).lstrip("/")
-                source = str(Path("/media") / configured)
-                source_is_url = False
-            elif mode == "simulated_usb":
-                publisher.publish_status("capturing", day_count, month_count)
-                source = capture_simulated_usb(options)
-                source_is_url = False
-            else:
-                raise RecognitionError(f"Unsupported input mode: {mode}")
-
-            day_count, month_count = limiter.consume()
-            publisher.publish_status("recognizing", day_count, month_count)
-            track = provider.recognize(source, source_is_url)
-            publisher.publish_track(track, "recognized", day_count, month_count)
-            log_event("recognition_succeeded", artist=track.artist, title=track.title,
-                      album=track.album, provider=track.provider,
-                      artwork_source=track.artwork_source, timing_source=track.timing_source)
-    except Exception as exc:
-        day_count, month_count = limiter.counts()
-        message = str(exc)
-        log_event("recognition_failed", level="ERROR", status=message,
-                  **exception_details(exc, secret=str(options.get("audd_api_token", ""))))
-        try:
-            status = "api_limit_reached" if "AudD API limit reached" in message else "error"
-            publisher.publish_status(status, day_count, month_count, message)
-        except Exception as publish_exc:
-            log_event("recognition_error_status_publish_failed", level="ERROR",
-                      **exception_details(publish_exc))
-
-    while True:
-        time.sleep(3600)
+    raise RuntimeError(f"Unsupported input mode: {mode}. Use usb_auto or usb_meter.")
 
 
 if __name__ == "__main__":
