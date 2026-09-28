@@ -1,19 +1,23 @@
 # Turntable Recognition
 
-Version 0.10.1 tightens live capture restarts to wait for clear audio above the playback start threshold, with explicit wait/resume logs. Version 0.10.0 adds detailed UTC-timestamped diagnostics for audio capture, AudD attempts, no-match results, retries, and Discogs collection matching. Version 0.9.0 added optional matching against the local Discogs collection, with distinct release/master artwork and year attributes, plus Tidbyt playback cleanup and resume behavior.
+Version 0.11.0 focuses the app on the Behringer UFO202 USB input, with automatic recognition, a USB meter/manual diagnostic mode, Discogs collection matching, timestamped diagnostics, a five-sample failed-audio cache, and persistent history for the latest three plays.
 
-Set `input_mode: usb_auto` and `audio_source: auto`, save and restart. Keep your existing AudD token and request limits.
+## Install and configure
 
-- Playback sessions start above -30 dBFS for 2 seconds and end below -35 dBFS for 15 seconds by default.
-- AudD recognition requests include Spotify, Apple Music, and MusicBrainz metadata.
-- The display prefers an official original album over singles, compilations, deluxe editions, and reissues.
-- Duration stays tied to the recognized recording; AudD timecode supplies playback position.
-- Exact standard-album artwork is resolved through Apple's public catalog, with provider and MusicBrainz/Internet Archive fallbacks.
-- Album metadata is cached by MusicBrainz recording ID or ISRC in `/data/album_cache.json`; successful audio samples are temporary. Failed automatic-recognition samples are retained up to `failed_sample_retention` (default 5) in Home Assistant Media → My media → `turntable_recognition/failed_samples`; set the option to 0 to disable.
-- New matches schedule the next check from recognition completion plus a three-second song-end buffer. Quiet input at that point returns to idle without an API request. Same-song matches retry after 15 seconds, missing timing falls back to 60 seconds, and failures back off to 300 seconds.
-- Idle sessions clear now-playing metadata. Late responses cannot revive ended sessions.
+Install this Home Assistant app from the repository. In its Configuration page:
 
-The now-playing entity exposes artist, title, recognized version, album, original year, artwork and its source, ISRC, MusicBrainz IDs, duration, position, timing source, and selection reason. See Documentation for full options.
+- Select `usb_auto` for normal automatic playback detection. `usb_meter` is the USB diagnostic/manual-recognition mode.
+- Enter the AudD API token.
+- Leave `audio_source` as `auto` to find the UFO202 by USB identity. Only set an explicit PulseAudio input name if auto-detection fails.
+- Set `sample_seconds` from 5 to 20; it defaults to 15.
+- Keep the request caps and failed-sample retention at their defaults unless you want different limits.
+- Enable `discogs_enabled` when the Discogs Connector has filled `/share/home_apps.sqlite3`.
 
-Use LINE on the UFO202 when feeding it from an external phono preamp. dBFS measures captured electrical signal, not room loudness or Sonos volume.
+The app publishes its sensor entities automatically. Add Home Assistant's built-in **Entities** or **History graph** card and search for `Turntable` to select them. An optional native-card view example is in [`examples/turntable-view.yaml`](examples/turntable-view.yaml).
+
+## Dashboard card picker limitation
+
+Installing this app creates sensor entities, but it does not register a new custom Lovelace card type. A custom card that appears by name in the card picker needs a frontend JavaScript resource to be installed and registered with Home Assistant. See [Configuration and dashboards](DOCS.md) for the supported options.
+
+For all options, entity IDs, audio capture details, play-history behavior, and troubleshooting, see [Documentation](DOCS.md).
 
