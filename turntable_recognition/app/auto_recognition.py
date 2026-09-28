@@ -5,6 +5,7 @@ import tempfile
 import threading
 import time
 import wave
+import uuid
 from datetime import datetime, timezone
 
 from diagnostics import exception_details, log_event
@@ -62,7 +63,7 @@ class AutomaticRecognition:
         self.results = queue.Queue(maxsize=1)
         self.busy = False
         self.data = None
-        self.target = int(options.get("sample_seconds", 12)) * 64000
+        self.target = int(options.get("sample_seconds", 15)) * 64000
         self.capture_start = 0
         self.capture_started_at = ""
         self.capture_levels = []
@@ -73,6 +74,7 @@ class AutomaticRecognition:
         self.last_failed_sample = None
         self.due = None
         self.identity = None
+        self.session_id = None
         self.failures = 0
         self.attempt_count = 0
         self.last_attempt_id = 0
@@ -134,6 +136,7 @@ class AutomaticRecognition:
         had_partial_capture = self.data is not None
         self.generation += 1
         self.data, self.due, self.identity = None, None, None
+        self.session_id = None
         self.capture_levels = []
         self.waiting_for_capture_signal = False
         self.failures = 0
@@ -158,6 +161,7 @@ class AutomaticRecognition:
             self.end()
         elif transition == "start":
             self.generation += 1
+            self.session_id = uuid.uuid4().hex
             self.due = now
             self.reason = "new_session"
             self.waiting_for_capture_signal = False
@@ -360,7 +364,8 @@ class AutomaticRecognition:
         self.last_attempt_outcome = "recognized"
         self.last_attempt_error = ""
         identity = tuple(" ".join(value.casefold().split()) for value in (track.artist, track.title))
-        if identity == self.identity:
+        new_play = identity != self.identity
+        if not new_play:
             self.due = now + self.retry
             self.reason = "same_song_retry"
         elif track.duration_seconds is not None and track.position_seconds is not None:
@@ -396,4 +401,6 @@ class AutomaticRecognition:
             "next_check_at": retry_at,
         }
         self.publisher.publish_track(track, "recognized", *self.limiter.counts(), diagnostics=diagnostics)
+        if new_play and self.session_id and hasattr(self.publisher, "record_play"):
+            self.publisher.record_play(track, self.session_id)
 
