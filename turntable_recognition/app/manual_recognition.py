@@ -3,6 +3,7 @@ import json
 import sys
 import tempfile
 import threading
+import uuid
 import wave
 
 from diagnostics import exception_details, log_event
@@ -20,7 +21,7 @@ class ManualRecognition:
         self.recording = False
         self.data = bytearray()
         self.error = ""
-        self.target = int(options.get("sample_seconds", 10)) * 16000 * 2 * 2
+        self.target = int(options.get("sample_seconds", 15)) * 16000 * 2 * 2
 
     def start(self):
         day, month = self.limiter.counts()
@@ -72,7 +73,7 @@ class ManualRecognition:
         try:
             day, month = self.limiter.counts()
             self.publisher.publish_status("capturing", day, month)
-            if not self.ready.wait(int(self.options.get("sample_seconds", 10)) + 30):
+            if not self.ready.wait(int(self.options.get("sample_seconds", 15)) + 30):
                 raise RuntimeError("Timed out waiting for live USB audio")
             with self.lock:
                 if self.error:
@@ -93,6 +94,8 @@ class ManualRecognition:
                 self.publisher.publish_status("recognizing", day, month)
                 track = provider.recognize(path, False)
                 self.publisher.publish_track(track, "recognized", day, month)
+                if hasattr(self.publisher, "record_play"):
+                    self.publisher.record_play(track, uuid.uuid4().hex)
                 log_event("manual_recognition_succeeded", artist=track.artist, title=track.title,
                           album=getattr(track, "album", ""),
                           provider=getattr(track, "provider", "audd"))
