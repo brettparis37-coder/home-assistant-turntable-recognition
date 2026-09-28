@@ -1,0 +1,34 @@
+title: Turntable
+path: turntable
+icon: mdi:record-player
+cards:
+  - type: entities
+    title: Now playing and recent plays
+    entities:
+      - entity: sensor.turntable_now_playing
+        name: Now playing
+      - entity: sensor.turntable_previous_track
+        name: Previous play
+      - entity: sensor.turntable_two_plays_ago
+        name: Two plays ago
+  - type: history-graph
+    title: Input level
+    hours_to_show: 1
+    entities:
+      - entity: sensor.turntable_audio_level
+        name: Average dBFS
+      - entity: sensor.turntable_audio_peak
+        name: Peak dBFS
+  - type: entities
+    title: Recognition and input status
+    entities:
+      - entity: sensor.turntable_playback_state
+      - entity: sensor.turntable_recognition_status
+      - entity: sensor.turntable_audio_input_status
+      - entity: sensor.turntable_audio_signal
+  - type: entities
+    title: AudD usage
+    entities:
+      - entity: sensor.turntable_audd_usage
+      - entity: sensor.turntable_audd_requests_remaining
+
