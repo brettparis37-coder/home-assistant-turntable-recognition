@@ -347,8 +347,10 @@ class HomeAssistantPublisher:
     def publish_play_history(self, entries: list[dict[str, Any]] | None = None) -> None:
         entries = entries if entries is not None else self.play_history.entries
         for index, suffix in ((1, "previous_track"), (2, "two_plays_ago")):
-            if len(entries) >= index:
-                entry = dict(entries[index - 1])
+            # entries[0] is the current/recent recognized play; history sensors
+            # show the two plays before it, matching their entity names.
+            if len(entries) > index:
+                entry = dict(entries[index])
                 state = entry.get("title") or "Unknown track"
                 entry.update({"friendly_name": "Turntable Previous Play" if index == 1
                               else "Turntable Two Plays Ago", "icon": "mdi:record-circle"})
