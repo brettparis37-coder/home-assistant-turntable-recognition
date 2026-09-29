@@ -13,11 +13,7 @@ Install this Home Assistant app from the repository. In its Configuration page:
 - Keep the request caps and failed-sample retention at their defaults unless you want different limits.
 - Enable `discogs_enabled` when the Discogs Connector has filled `/share/home_apps.sqlite3`.
 
-The app publishes its sensor entities automatically. Add Home Assistant's built-in **Entities** or **History graph** card and search for `Turntable` to select them. An optional native-card view example is in [`examples/turntable-view.yaml`](examples/turntable-view.yaml).
-
-## Dashboard card picker limitation
-
-Installing this app creates sensor entities, but it does not register a new custom Lovelace card type. A custom card that appears by name in the card picker needs a frontend JavaScript resource to be installed and registered with Home Assistant. See [Configuration and dashboards](DOCS.md) for the supported options.
+The app publishes its sensor entities automatically. The repository also includes HACS dashboard cards for Now Playing (with album artwork) and recognition diagnostics; install the repository in HACS as a **Dashboard** custom repository, then search for their names in the card picker. A complete view example is in [`examples/turntable-view.yaml`](examples/turntable-view.yaml).
 
 For all options, entity IDs, audio capture details, play-history behavior, and troubleshooting, see [Documentation](DOCS.md).
 
