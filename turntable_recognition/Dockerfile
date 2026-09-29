@@ -1,9 +1,11 @@
 ARG BUILD_FROM
 FROM ${BUILD_FROM}
 
-RUN apk add --no-cache python3 py3-pip ca-certificates ffmpeg pulseaudio-utils \
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends python3 python3-venv python3-pip ca-certificates ffmpeg pulseaudio-utils \
+    && rm -rf /var/lib/apt/lists/* \
     && python3 -m venv /opt/venv \
-    && /opt/venv/bin/pip install --no-cache-dir requests==2.32.5 Pillow==11.3.0
+    && /opt/venv/bin/pip install --no-cache-dir requests==2.32.5 Pillow==11.3.0 shazamio==0.8.1
 
 COPY app /app
 COPY run.sh /run.sh
