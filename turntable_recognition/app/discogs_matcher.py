@@ -3,12 +3,33 @@ from __future__ import annotations
 
 import re
 import sqlite3
-from difflib import get_close_matches
+from difflib import SequenceMatcher, get_close_matches
 from pathlib import Path
 
 
 def normalize(value: str) -> str:
     return re.sub(r"[^a-z0-9]+", " ", str(value or "").casefold()).strip()
+
+
+# Recognition providers often append an edition label that is not part of the
+# Discogs track title. Remove only known trailing labels; avoid broad fuzzy
+# matching that could join distinct tracks with similar names.
+_VERSION_SUFFIX = re.compile(
+    r"\s*[\[(]\s*(?:(?:original|single|album|radio|mono|stereo|remastered|"
+    r"remaster(?:ed)?|live|edit|extended|instrumental|[\w-]+\s+)?version|"
+    r"(?:mono|stereo|radio|single|album)\s+(?:mix|edit)|\d{4}\s+remaster)\s*[\])]\s*$",
+    re.IGNORECASE,
+)
+
+
+def normalize_for_match(value: str) -> str:
+    """Normalize a title, dropping known trailing provider edition labels."""
+    title = str(value or "").strip()
+    previous = None
+    while title != previous:
+        previous = title
+        title = _VERSION_SUFFIX.sub("", title).strip()
+    return normalize(title)
 
 
 class DiscogsMatcher:
@@ -19,6 +40,7 @@ class DiscogsMatcher:
 
     def match(self, artist: str, title: str) -> dict | None:
         wanted_title = normalize(title)
+        wanted_base_title = normalize_for_match(title)
         wanted_artist = normalize(artist)
         self.last_diagnostics = {"artist": artist, "title": title}
         if not wanted_title:
@@ -72,11 +94,17 @@ class DiscogsMatcher:
         candidates = []
         title_matches = []
         for row in rows:
-            if normalize(row["track_title"]) != wanted_title:
+            candidate_title = normalize(row["track_title"])
+            if candidate_title == wanted_title:
+                candidate_method = "exact_title"
+            elif wanted_base_title and normalize_for_match(row["track_title"]) == wanted_base_title:
+                candidate_method = "normalized_version_title"
+            else:
                 continue
             credits = normalize(" ".join(filter(None, (row["album_artists"], row["track_artists"]))))
             artist_match = bool(wanted_artist and wanted_artist in credits)
-            candidates.append((not artist_match, row["release_id"], row["sequence"], row))
+            candidates.append((not artist_match, candidate_method != "exact_title",
+                               row["release_id"], row["sequence"], row))
             title_matches.append({
                 "release_id": row["release_id"], "album": row["album"],
                 "track_title": row["track_title"],
@@ -85,10 +113,69 @@ class DiscogsMatcher:
                 "artist_match": artist_match,
             })
         if not candidates:
+            # Third pass: tolerate small transcription differences (for example,
+            # a dropped character) only when the title is still highly similar.
+            # Artist credit breaks close title ties; it cannot rescue a weak title.
+            title_rows: dict[str, list] = {}
+            for row in rows:
+                candidate_title = normalize_for_match(str(row["track_title"] or ""))
+                if candidate_title:
+                    title_rows.setdefault(candidate_title, []).append(row)
+            scores = {
+                key: SequenceMatcher(None, wanted_base_title, key, autojunk=False).ratio()
+                for key in title_rows
+            }
+            best_score = max(scores.values(), default=0.0)
+            fuzzy_cutoff = 0.88
+            if best_score >= fuzzy_cutoff:
+                close_keys = [key for key, score in scores.items() if best_score - score <= 0.035]
+                if len(close_keys) > 1:
+                    matching_artist_keys = {
+                        key for key in close_keys
+                        if any(wanted_artist and wanted_artist in normalize(" ".join(filter(
+                            None, (row["album_artists"], row["track_artists"])
+                        ))) for row in title_rows[key])
+                    }
+                    if len(matching_artist_keys) == 1:
+                        close_keys = list(matching_artist_keys)
+                    else:
+                        self.last_diagnostics.update(
+                            status="ambiguous_fuzzy_title", collection_track_count=len(rows),
+                            fuzzy_cutoff=fuzzy_cutoff,
+                            fuzzy_candidates=[{"track_title": title_rows[key][0]["track_title"],
+                                               "similarity": round(scores[key], 3)}
+                                              for key in sorted(close_keys, key=lambda item: scores[item], reverse=True)[:5]],
+                        )
+                        return None
+
+                fuzzy_key = close_keys[0]
+                fuzzy_rows = title_rows[fuzzy_key]
+                fuzzy_candidates = []
+                for row in fuzzy_rows:
+                    credits = normalize(" ".join(filter(None, (row["album_artists"], row["track_artists"]))))
+                    artist_match = bool(wanted_artist and wanted_artist in credits)
+                    fuzzy_candidates.append((not artist_match, row["release_id"], row["sequence"], row))
+                selected = min(fuzzy_candidates, key=lambda item: item[:3])
+                row = selected[3]
+                self.last_diagnostics.update(
+                    status="matched", collection_track_count=len(rows),
+                    match_method="fuzzy_title", fuzzy_similarity=round(scores[fuzzy_key], 3),
+                    fuzzy_cutoff=fuzzy_cutoff, selected_release_id=row["release_id"],
+                    artist_match=not selected[0],
+                    candidates=[{"release_id": item[3]["release_id"], "album": item[3]["album"],
+                                 "track_title": item[3]["track_title"],
+                                 "artist_match": not item[0],
+                                 "similarity": round(scores[fuzzy_key], 3)}
+                                for item in fuzzy_candidates[:5]],
+                )
+                result = dict(row)
+                result["_match_method"] = "fuzzy_title"
+                return result
+
             unique_titles = sorted({normalize(str(row["track_title"])): str(row["track_title"])
                                     for row in rows if row["track_title"]}.values())
             title_map = {normalize(value): value for value in unique_titles}
-            suggestions = get_close_matches(wanted_title, list(title_map), n=3, cutoff=0.5)
+            suggestions = get_close_matches(wanted_base_title or wanted_title, list(title_map), n=3, cutoff=0.5)
             closest = []
             for normalized in suggestions:
                 suggestion = title_map[normalized]
@@ -99,22 +186,30 @@ class DiscogsMatcher:
                     "release_ids": list(dict.fromkeys(int(row["release_id"]) for row in related))[:3],
                 })
             self.last_diagnostics.update(
-                status="no_exact_track_title", collection_track_count=len(rows),
+                status="no_track_title_match", collection_track_count=len(rows),
                 closest_track_titles=closest,
             )
             return None
         # Prefer a matching artist credit; otherwise use the first stable release
         # and track order. This is intentionally simple and deterministic.
-        row = min(candidates, key=lambda value: value[:3])[3]
+        selected = min(candidates, key=lambda value: value[:4])
+        row = selected[4]
+        selected_method = next(
+            "exact_title" if normalize(row["track_title"]) == wanted_title else "normalized_version_title"
+            for item in candidates if item[4]["release_id"] == row["release_id"]
+            and item[4]["sequence"] == row["sequence"]
+        )
         self.last_diagnostics.update(
             status="matched", collection_track_count=len(rows),
             exact_title_candidate_count=len(title_matches),
+            match_method=selected_method,
             selected_release_id=row["release_id"],
-            artist_match=next(item["artist_match"] for item in title_matches
-                              if item["release_id"] == row["release_id"]),
+            artist_match=not selected[0],
             candidates=title_matches[:5],
         )
-        return dict(row)
+        result = dict(row)
+        result["_match_method"] = selected_method
+        return result
 
     def next_track(self, release_id: int | str, sequence: int | str) -> dict | None:
         """Return the next playable track on this exact Discogs release."""
@@ -210,7 +305,13 @@ def apply_match(track, match: dict, options: dict) -> None:
     if selected_art:
         track.artwork_url = selected_art
         track.artwork_source = "discogs_master" if selected_art == track.master_artwork_url else "discogs_release"
-    track.selection_reason = "matched an exact track in the cached Discogs collection"
+    method = match.get("_match_method", "exact_title")
+    if method == "normalized_version_title":
+        track.selection_reason = "matched a Discogs collection track after removing a recognized version label"
+    elif method == "fuzzy_title":
+        track.selection_reason = "matched a highly similar track title in the cached Discogs collection"
+    else:
+        track.selection_reason = "matched an exact track in the cached Discogs collection"
     duration_ms = match.get("duration_ms")
     if duration_ms and not track.duration_seconds:
         track.duration_seconds = float(duration_ms) / 1000

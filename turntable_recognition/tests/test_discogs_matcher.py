@@ -77,12 +77,68 @@ class MatcherTests(unittest.TestCase):
         matcher = DiscogsMatcher(str(self.path))
         self.assertEqual(matcher.average_duration_seconds(10), 205)
 
-    def test_no_track_match_returns_none(self):
+    def test_fuzzy_title_fallback_matches_minor_recognition_typo(self):
         matcher = DiscogsMatcher(str(self.path))
-        self.assertIsNone(matcher.match("The Artist", "A Great Sng"))
-        self.assertEqual(matcher.last_diagnostics["status"], "no_exact_track_title")
+        match = matcher.match("The Artist", "A Great Sng")
+        self.assertEqual(match["track_title"], "A Great Song!")
+        self.assertEqual(match["_match_method"], "fuzzy_title")
+        self.assertGreaterEqual(matcher.last_diagnostics["fuzzy_similarity"], 0.88)
+
+    def test_fuzzy_artist_credit_resolves_close_title_candidates(self):
+        db = sqlite3.connect(self.path)
+        db.execute("UPDATE discogs_tracks SET title = ? WHERE track_key = ?", ("A Great Song", "10:1"))
+        db.execute("UPDATE discogs_tracks SET title = ? WHERE track_key = ?", ("A Great Sont", "11:1"))
+        db.commit()
+        db.close()
+
+        matcher = DiscogsMatcher(str(self.path))
+        match = matcher.match("The Artist", "A Great Son")
+        self.assertEqual(match["release_id"], 10)
+        self.assertTrue(matcher.last_diagnostics["artist_match"])
+        self.assertEqual(matcher.last_diagnostics["match_method"], "fuzzy_title")
+
+    def test_fuzzy_match_reports_ambiguity_when_artist_cannot_break_tie(self):
+        db = sqlite3.connect(self.path)
+        db.execute("UPDATE discogs_tracks SET title = ? WHERE track_key = ?", ("A Great Song", "10:1"))
+        db.execute("UPDATE discogs_tracks SET title = ? WHERE track_key = ?", ("A Great Sont", "11:1"))
+        db.commit()
+        db.close()
+
+        matcher = DiscogsMatcher(str(self.path))
+        self.assertIsNone(matcher.match("Unknown Artist", "A Great Son"))
+        self.assertEqual(matcher.last_diagnostics["status"], "ambiguous_fuzzy_title")
+        self.assertEqual(len(matcher.last_diagnostics["fuzzy_candidates"]), 2)
+
+    def test_weak_fuzzy_similarity_is_not_accepted(self):
+        matcher = DiscogsMatcher(str(self.path))
+        self.assertIsNone(matcher.match("The Artist", "Completely unrelated title"))
+        self.assertEqual(matcher.last_diagnostics["status"], "no_track_title_match")
         self.assertEqual(matcher.last_diagnostics["collection_track_count"], 3)
-        self.assertEqual(matcher.last_diagnostics["closest_track_titles"][0]["track_title"], "A Great Song!")
+        self.assertEqual(matcher.last_diagnostics["closest_track_titles"], [])
+
+    def test_match_ignores_known_trailing_version_label_and_case(self):
+        db = sqlite3.connect(self.path)
+        db.execute("UPDATE discogs_tracks SET title = ? WHERE track_key = ?",
+                   ("(You Caught Me) Smilin'", "10:1"))
+        db.commit()
+        db.close()
+
+        matcher = DiscogsMatcher(str(self.path))
+        match = matcher.match("THE ARTIST", "(You Caught Me) Smilin' [single version]")
+        self.assertEqual(match["track_title"], "(You Caught Me) Smilin'")
+        self.assertEqual(match["_match_method"], "normalized_version_title")
+        self.assertEqual(matcher.last_diagnostics["match_method"], "normalized_version_title")
+
+    def test_matching_artist_credit_is_preferred_over_exact_version_title(self):
+        db = sqlite3.connect(self.path)
+        db.execute("UPDATE discogs_tracks SET title = ? WHERE track_key = ?",
+                   ("A Great Song [single version]", "11:1"))
+        db.commit()
+        db.close()
+
+        match = DiscogsMatcher(str(self.path)).match("The Artist", "A Great Song [single version]")
+        self.assertEqual(match["track_title"], "A Great Song!")
+        self.assertEqual(match["_match_method"], "normalized_version_title")
 
     def test_artist_mismatch_is_reported_for_exact_title_candidates(self):
         matcher = DiscogsMatcher(str(self.path))

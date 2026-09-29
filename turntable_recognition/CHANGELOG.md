@@ -1,3 +1,7 @@
+# 0.14.1
+
+- Normalize common trailing version labels in recognized titles and add a conservative fuzzy Discogs collection match as a third fallback, using artist credits to resolve close candidates and reporting unresolved ambiguity.
+
 # 0.14.0
 
 - Publish the next playable track from the exact matched Discogs release and use it as a last-resort now-playing prediction after all recognition providers miss.
