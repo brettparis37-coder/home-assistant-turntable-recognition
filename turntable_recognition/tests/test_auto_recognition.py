@@ -13,6 +13,7 @@ class Publisher:
         self.tracks, self.states, self.statuses, self.plays = [], {}, [], []
         self.status_details = []
         self.cleared = 0
+        self.predicted_current, self.predicted_next = [], []
     def clear_track(self): self.cleared += 1
     def set_state(self, suffix, state, attrs): self.states[suffix] = (state, attrs)
     def publish_status(self, status, *args, details=None):
@@ -20,6 +21,9 @@ class Publisher:
         self.status_details.append(details or {})
     def publish_track(self, track, *args, diagnostics=None): self.tracks.append(track)
     def record_play(self, track, session_id): self.plays.append((track, session_id))
+    def publish_prediction(self, current, following=None, diagnostics=None):
+        self.predicted_current.append((current, following, diagnostics))
+    def publish_predicted_next(self, following): self.predicted_next.append(following)
 
 
 class Limiter:
@@ -110,6 +114,48 @@ class AutoTests(unittest.TestCase):
         self.result(second)
         self.assertEqual(second.position_seconds, 45)
         self.assertEqual(self.worker.reason, "same_song_retry")
+
+    def test_failed_recognition_advances_through_discogs_prediction_then_uses_backoff(self):
+        self.worker.options["discogs_enabled"] = True
+        second = {"artist": "Artist", "title": "Second", "album": "Album",
+                  "discogs_release_id": "10", "discogs_track_sequence": 2,
+                  "duration_seconds": 200, "position_seconds": 0}
+        third = {**second, "title": "Third", "discogs_track_sequence": 3,
+                 "duration_seconds": 210}
+
+        class Matcher:
+            def next_track(self, release_id, sequence):
+                return {"track_title": "Second", "release_id": 10, "sequence": 2,
+                        "duration_ms": 200000, "album_artists": "Artist", "album": "Album"} if sequence == 1 else (
+                    {"track_title": "Third", "release_id": 10, "sequence": 3,
+                     "duration_ms": 210000, "album_artists": "Artist", "album": "Album"}
+                    if sequence == 2 else None)
+            def average_duration_seconds(self, release_id): return 200
+
+        self.worker.discogs_matcher = Matcher()
+        confirmed = track(duration=240, position=220)
+        confirmed.discogs_release_id = "10"
+        confirmed.discogs_track_sequence = 1
+        self.result(confirmed)
+        self.assertEqual(self.worker.predicted_next["title"], "Second")
+
+        self.now = self.worker.due
+        self.result(None, "No song was recognized")
+        self.assertEqual(self.publisher.predicted_current[-1][0]["title"], "Second")
+        self.assertEqual(self.worker.predicted_next["title"], "Third")
+        self.assertEqual(self.worker.reason, "predicted_song_end")
+        self.assertEqual(self.worker.due, self.now + 188)
+
+        self.now = self.worker.due
+        self.result(None, "No song was recognized")
+        self.assertEqual(self.publisher.predicted_current[-1][0]["title"], "Third")
+        self.assertIsNone(self.worker.predicted_next)
+        self.assertEqual(self.worker.due, self.now + 198)
+
+        self.now = self.worker.due
+        self.result(None, "No song was recognized")
+        self.assertEqual(self.worker.reason, "retry_after_no_match")
+        self.assertEqual(self.worker.due, self.now + 120)
 
     def test_error_backoff_bounded(self):
         for expected in (30, 60, 120, 240, 300, 300):

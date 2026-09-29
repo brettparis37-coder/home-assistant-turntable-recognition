@@ -1,3 +1,10 @@
+# 0.14.0
+
+- Publish the next playable track from the exact matched Discogs release and use it as a last-resort now-playing prediction after all recognition providers miss.
+- Advance predictions at the predicted track's estimated end, using Discogs duration, the release's average track duration, or a marked three-minute estimate; resume normal retry backoff when no next track is available.
+- Add `sensor.turntable_predicted_next`, keep predictions out of play history, and label predicted now-playing data separately from confirmed recognition.
+- Show a live `MM:SS` countdown to the next scheduled recognition check on the diagnostics card without polling or changing audio/API timing.
+
 # 0.13.1
 
 - Try the Rust Shazam recognizer first, then the slower legacy Shazam recognizer after a no-match or error, before using AudD.

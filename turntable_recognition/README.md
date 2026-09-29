@@ -1,6 +1,6 @@
 # Turntable Recognition
 
-Version 0.13.1 tries ShazamIO's Rust recognizer first, then its slower legacy recognizer after a no-match, before falling back to AudD. Shazam attempts do not use AudD quota. The app supports the Behringer UFO202 USB input, automatic recognition, a USB meter/manual diagnostic mode, Discogs collection matching, timestamped diagnostics, a five-sample failed-audio cache, persistent history for the latest three plays, and live album-art color on the Now Playing card.
+Version 0.14.0 tries ShazamIO's Rust recognizer first, then its slower legacy recognizer after a no-match, before falling back to AudD. Shazam attempts do not use AudD quota. The app supports the Behringer UFO202 USB input, automatic recognition, a USB meter/manual diagnostic mode, Discogs collection matching and next-track prediction, timestamped diagnostics, a five-sample failed-audio cache, persistent history for the latest three confirmed plays, and live album-art color on the Now Playing card.
 
 ## Install and configure
 

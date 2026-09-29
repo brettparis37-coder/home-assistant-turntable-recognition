@@ -53,6 +53,40 @@ class ArtworkColorTests(unittest.TestCase):
         self.assertEqual(attributes["recognition_status"], "recognized")
         self.assertEqual(attributes["dominant_color"], "#c06020")
 
+    def test_prediction_is_published_as_tentative_now_playing_and_separate_next_sensor(self):
+        fake_requests = types.ModuleType("requests")
+        fake_requests.post = None
+        main_path = Path(__file__).resolve().parents[1] / "app" / "main.py"
+        spec = importlib.util.spec_from_file_location("turntable_main_prediction_test", main_path)
+        main = importlib.util.module_from_spec(spec)
+        with patch.dict(sys.modules, {"requests": fake_requests, spec.name: main}):
+            spec.loader.exec_module(main)
+
+        class Limiter:
+            def counts(self): return 0, 0
+            def details(self):
+                return {"limit_reached": False, "requests_this_cycle": 0,
+                        "allowance": 100, "remaining": 100, "cycle_end": "2026-10-25"}
+
+        publisher = main.HomeAssistantPublisher("turntable", Limiter())
+        current = {"title": "Predicted song", "artist": "Artist", "album": "Album",
+                   "provider": "discogs_prediction", "artwork_url": "https://i.scdn.co/image/cover.jpg",
+                   "discogs_release_id": "123", "discogs_track_sequence": 2}
+        following = {**current, "title": "Following song", "discogs_track_sequence": 3}
+        with patch.object(main, "dominant_artwork_color", return_value="#c06020"), \
+             patch.object(publisher, "set_state") as set_state:
+            publisher.publish_prediction(current, following)
+
+        states = {call.args[0]: (call.args[1], call.args[2]) for call in set_state.call_args_list}
+        now_title, now_attrs = states["now_playing"]
+        next_title, next_attrs = states["predicted_next"]
+        self.assertEqual(now_title, "Predicted song")
+        self.assertEqual(now_attrs["recognition_status"], "predicted")
+        self.assertTrue(now_attrs["is_prediction"])
+        self.assertEqual(now_attrs["dominant_color"], "#c06020")
+        self.assertEqual(next_title, "Following song")
+        self.assertTrue(next_attrs["available"])
+
 
 if __name__ == "__main__":
     unittest.main()

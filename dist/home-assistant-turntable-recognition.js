@@ -102,7 +102,7 @@ class TurntableNowPlayingCard extends HTMLElement {
         <div class="layout ${idle ? "idle" : ""}">
           <div class="art"></div>
           <div class="details">
-            <div class="eyebrow">${idle ? "Turntable" : "Now playing"}</div>
+            <div class="eyebrow">${idle ? "Turntable" : attributes.recognition_status === "predicted" ? "Predicted next track · Discogs" : "Now playing"}</div>
             <h2 class="title"></h2>
             <div class="artist"></div>
             <div class="album"></div>
@@ -174,6 +174,17 @@ class TurntableRecognitionDiagnosticsCard extends HTMLElement {
   constructor() {
     super();
     this.attachShadow({ mode: "open" });
+    this._countdownTimer = null;
+  }
+
+  connectedCallback() {
+    if (!this._countdownTimer) this._countdownTimer = setInterval(() => this._updateCountdown(), 1000);
+    this._updateCountdown();
+  }
+
+  disconnectedCallback() {
+    if (this._countdownTimer) clearInterval(this._countdownTimer);
+    this._countdownTimer = null;
   }
 
   setConfig(config) {
@@ -214,18 +225,22 @@ class TurntableRecognitionDiagnosticsCard extends HTMLElement {
     const key = JSON.stringify([status?.state, statusAttrs.last_error, statusAttrs.last_attempt_outcome,
       statusAttrs.last_attempt_at, statusAttrs.last_attempt_finished_at, statusAttrs.last_attempt_duration_seconds,
       statusAttrs.last_attempt_error, statusAttrs.consecutive_failures, statusAttrs.retry_seconds,
-      statusAttrs.check_reason, statusAttrs.next_check_at, playback?.state, playbackAttrs,
+      statusAttrs.check_reason, statusAttrs.next_check_at, statusAttrs.prediction_title, playback?.state, playbackAttrs,
       level?.state, peak?.state, signal?.state, signal?.attributes?.threshold_dbfs,
       input?.state, input?.attributes?.last_error, input?.attributes?.audio_source,
       usage?.state, usageAttrs.requests_this_cycle, usageAttrs.allowance, usageAttrs.remaining,
       usageAttrs.usage_percent, usageAttrs.cycle_end]);
-    if (key === this._renderKey) return;
+    if (key === this._renderKey) {
+      this._updateCountdown();
+      return;
+    }
     this._renderKey = key;
 
     const rawState = status?.state || "unavailable";
     const labels = {
       idle: "Idle", listening: "Listening", capturing: "Capturing audio",
       recognizing: "Recognizing", recognized: "Track recognized", no_match: "No match",
+      predicted: "Showing Discogs prediction",
       error: "Recognition error", api_limit_reached: "Monthly limit reached",
       daily_limit_reached: "Daily limit reached", input_unavailable: "Audio input unavailable",
     };
@@ -234,18 +249,22 @@ class TurntableRecognitionDiagnosticsCard extends HTMLElement {
     const tone = ["error", "input_unavailable", "api_limit_reached", "daily_limit_reached"].includes(rawState)
       ? "bad" : ["no_match", "capturing", "recognizing", "listening"].includes(rawState)
         ? "warn" : rawState === "recognized" ? "good" : "neutral";
-    const help = {
+    const defaultHelp = {
       idle: "Waiting for sustained audio above the start threshold.",
       listening: "Audio crossed the start threshold; monitoring the playback session.",
       capturing: "Recording a sample from the USB audio input.",
       recognizing: "Sample captured and sent for track recognition.",
       recognized: "Recognition succeeded. The next check follows the song timing when available.",
       no_match: "The service returned no track match. The app will retry with backoff.",
+      predicted: "Recognition missed, so the next track on the matched Discogs release is shown until the next estimated song-end check.",
       error: "The latest recognition attempt failed. Review the error details below.",
       api_limit_reached: "The configured monthly safety limit is reached; requests are paused.",
       daily_limit_reached: "The configured daily safety limit is reached; requests are paused.",
       input_unavailable: "The USB capture source is disconnected or not delivering audio.",
     }[rawState] || "Waiting for recognition status from the app.";
+    const help = rawState === "no_match" && statusAttrs.prediction_title
+      ? `Recognition missed; showing the predicted track “${statusAttrs.prediction_title}” until the next scheduled check.`
+      : defaultHelp;
     const displayState = (entity) => entity?.state && !["unknown", "unavailable"].includes(entity.state)
       ? entity.state : "—";
     const number = (value) => {
@@ -301,6 +320,7 @@ class TurntableRecognitionDiagnosticsCard extends HTMLElement {
         .metric { min-width:0; border-radius:10px; padding:11px 12px; background:var(--secondary-background-color); }
         .metric-label { color:var(--secondary-text-color); font-size:11px; margin-bottom:4px; }
         .metric-value { font-size:14px; font-weight:600; overflow-wrap:anywhere; }
+        .countdown { margin-top:5px; font-size:20px; font-weight:700; font-variant-numeric:tabular-nums; letter-spacing:.03em; }
         .usage-meter { height:7px; margin-top:8px; border-radius:99px; background:var(--primary-background-color); overflow:hidden; }
         .usage-fill { height:100%; width:var(--usage,0%); border-radius:inherit; background:var(--primary-color); }
         .error { border-left:3px solid var(--error-color,#db4437); padding:10px 12px; background:var(--secondary-background-color); white-space:pre-wrap; overflow-wrap:anywhere; font-size:12px; line-height:1.45; }
@@ -322,7 +342,7 @@ class TurntableRecognitionDiagnosticsCard extends HTMLElement {
         </div>
         <div class="section grid">
           <div class="metric"><div class="metric-label">USB input</div><div class="metric-value input-value"></div><div class="muted source"></div></div>
-          <div class="metric"><div class="metric-label">Playback session</div><div class="metric-value playback-value"></div><div class="muted next-check"></div></div>
+          <div class="metric"><div class="metric-label">Playback session</div><div class="metric-value playback-value"></div><div class="muted next-check"></div><div class="metric-label countdown-label">Time to recheck</div><div class="countdown">—</div></div>
           <div class="metric"><div class="metric-label">Last recognition</div><div class="metric-value attempt-value"></div><div class="muted attempt-meta"></div></div>
           <div class="metric"><div class="metric-label">AudD cycle usage</div><div class="metric-value usage-value"></div><div class="usage-meter"><div class="usage-fill"></div></div><div class="muted usage-meta"></div></div>
         </div>
@@ -352,6 +372,27 @@ class TurntableRecognitionDiagnosticsCard extends HTMLElement {
     const errorSection = root.querySelector(".error-section");
     errorSection.hidden = !error;
     if (error) setText(".error-message", error);
+    this._updateCountdown();
+  }
+
+  _updateCountdown() {
+    const node = this.shadowRoot?.querySelector(".countdown");
+    const label = this.shadowRoot?.querySelector(".countdown-label");
+    if (!node || !label) return;
+    const playback = this._state("playback_state");
+    const attrs = playback?.attributes || {};
+    const active = attrs.active === true || playback?.state === "playing";
+    const target = Date.parse(attrs.next_check_at || this._state("recognition_status")?.attributes?.next_check_at || "");
+    if (!active || !Number.isFinite(target)) {
+      node.textContent = "—";
+      label.hidden = true;
+      return;
+    }
+    label.hidden = false;
+    const seconds = Math.max(0, Math.ceil((target - Date.now()) / 1000));
+    const minutes = Math.floor(seconds / 60);
+    const remainder = seconds % 60;
+    node.textContent = `${String(minutes).padStart(2, "0")}:${String(remainder).padStart(2, "0")}`;
   }
 
   _formatTime(value) {
@@ -368,6 +409,7 @@ class TurntableRecognitionDiagnosticsCard extends HTMLElement {
   _reason(value) {
     const labels = {
       estimated_song_end: "Song-end check", same_song_retry: "Same-song recheck",
+      predicted_song_end: "Predicted song-end check",
       missing_timing_fallback: "Fallback recheck", retry_after_no_match: "Retry after no match",
       retry_after_error: "Retry after error", new_session: "New session", waiting_for_audio: "Waiting for audio",
       request_limit: "Request limit", capturing: "Capturing sample", recognizing: "Recognizing",

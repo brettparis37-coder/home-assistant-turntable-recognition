@@ -2,7 +2,7 @@
 
 This public repository contains two installable pieces for Home Assistant:
 
-- **Turntable Recognition app** in [`turntable_recognition/`](turntable_recognition/): captures the Behringer UFO202 USB audio input, recognizes records with AudD, publishes sensors, and keeps recent-play metadata.
+- **Turntable Recognition app** in [`turntable_recognition/`](turntable_recognition/): captures the Behringer UFO202 USB audio input, recognizes records with Shazam and AudD, uses cached Discogs track order for tentative next-song predictions, publishes sensors, and keeps recent-play metadata.
 - **Turntable dashboard cards** in [`dist/`](dist/): HACS-managed custom cards for Now Playing (including album artwork) and live recognition diagnostics.
 
 ## Install the app
@@ -23,7 +23,7 @@ Install **Turntable Recognition**. Configure the AudD token, use `usb_auto` for 
 4. Find **Turntable Dashboard Cards** in HACS and download it.
 5. Refresh Home Assistant. In a dashboard, choose **Edit dashboard → Add card** and search for **Turntable Now Playing** or **Turntable Recognition Diagnostics**. Both cards default to the app's `turntable` sensor prefix.
 
-The Now Playing card renders `artwork_url` (with release/master artwork fallbacks), title, artist, album, and year. When a track is recognized, the app samples a vivid color from its album art and applies it to the full card background; the color arrives as a sensor attribute and updates the card live. The diagnostics card shows recognition state and feedback, live dBFS level and threshold, USB input status, playback/next-check details, last attempt and errors, and AudD cycle usage. If HACS does not register the resource automatically, add `/hacsfiles/home-assistant-turntable-recognition/home-assistant-turntable-recognition.js` as a JavaScript module under **Settings → Dashboards → Resources**.
+The Now Playing card renders `artwork_url` (with release/master artwork fallbacks), title, artist, album, and year. It labels tentative Discogs predictions separately from confirmed recognition and applies the sampled artwork color to the full card background. The diagnostics card shows recognition state and feedback, live dBFS level and threshold, USB input status, playback/next-check details with a live minutes/seconds countdown, last attempt and errors, and AudD cycle usage. If HACS does not register the resource automatically, add `/hacsfiles/home-assistant-turntable-recognition/home-assistant-turntable-recognition.js` as a JavaScript module under **Settings → Dashboards → Resources**.
 
 If Home Assistant is 2026.6 or newer, the card can also be suggested when selecting the now-playing entity in the card picker.
 

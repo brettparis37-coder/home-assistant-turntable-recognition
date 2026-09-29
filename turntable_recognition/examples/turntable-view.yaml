@@ -11,6 +11,8 @@ cards:
     entities:
       - entity: sensor.turntable_now_playing
         name: Now playing
+      - entity: sensor.turntable_predicted_next
+        name: Predicted next track
       - entity: sensor.turntable_previous_track
         name: Previous play
       - entity: sensor.turntable_two_plays_ago

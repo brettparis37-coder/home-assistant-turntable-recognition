@@ -15,6 +15,7 @@ class DiscogsMatcher:
     def __init__(self, database_path: str = "/share/home_apps.sqlite3") -> None:
         self.database_path = Path(database_path)
         self.last_diagnostics = {"status": "not_run"}
+        self.last_prediction_diagnostics = {"status": "not_run"}
 
     def match(self, artist: str, title: str) -> dict | None:
         wanted_title = normalize(title)
@@ -115,11 +116,83 @@ class DiscogsMatcher:
         )
         return dict(row)
 
+    def next_track(self, release_id: int | str, sequence: int | str) -> dict | None:
+        """Return the next playable track on this exact Discogs release."""
+        if not release_id or sequence in (None, "") or not self.database_path.is_file():
+            return None
+        uri = self.database_path.resolve().as_uri() + "?mode=ro"
+        connection = None
+        try:
+            connection = sqlite3.connect(uri, uri=True, timeout=3)
+            connection.row_factory = sqlite3.Row
+            connection.execute("PRAGMA query_only = ON")
+            track_columns = {row[1] for row in connection.execute("PRAGMA table_info(discogs_tracks)")}
+            duration_expression = "t.duration_ms" if "duration_ms" in track_columns else "NULL AS duration_ms"
+            row = connection.execute(
+                f"""SELECT t.title AS track_title, t.position, t.sequence,
+                          {duration_expression}, r.release_id, r.master_id,
+                          r.title AS album, r.year AS release_year,
+                          COALESCE(NULLIF(r.cover_image, ''), r.thumb) AS release_artwork_url,
+                          r.thumb AS release_thumb_url, m.year AS master_year,
+                          COALESCE(NULLIF(m.artwork_url, ''), m.thumb_url) AS master_artwork_url,
+                          m.thumb_url AS master_thumb_url,
+                          GROUP_CONCAT(DISTINCT a.name) AS album_artists,
+                          (SELECT GROUP_CONCAT(DISTINCT ta.name)
+                             FROM discogs_track_credits tc
+                             JOIN discogs_artists ta USING (artist_key)
+                            WHERE tc.track_key = t.track_key) AS track_artists
+                     FROM discogs_tracks t
+                     JOIN discogs_releases r USING (release_id)
+                     LEFT JOIN discogs_masters m ON m.master_id = r.master_id
+                     LEFT JOIN discogs_release_artists ra USING (release_id)
+                     LEFT JOIN discogs_artists a USING (artist_key)
+                    WHERE t.release_id = ? AND t.sequence > ? AND t.track_type = 'track'
+                    GROUP BY t.track_key
+                    ORDER BY t.sequence LIMIT 1""",
+                (release_id, sequence),
+            ).fetchone()
+            self.last_prediction_diagnostics = {
+                "status": "next_track_found" if row else "end_of_release",
+                "release_id": release_id,
+                "after_sequence": sequence,
+            }
+            return dict(row) if row else None
+        except (sqlite3.Error, OSError, ValueError) as exc:
+            self.last_prediction_diagnostics = {
+                "status": "query_failed", "release_id": release_id,
+                "after_sequence": sequence, "error_type": type(exc).__name__, "error": str(exc),
+            }
+            return None
+        finally:
+            if connection is not None:
+                connection.close()
+
+    def average_duration_seconds(self, release_id: int | str) -> float | None:
+        """Estimate timing from known song durations on the same release."""
+        if not release_id or not self.database_path.is_file():
+            return None
+        uri = self.database_path.resolve().as_uri() + "?mode=ro"
+        connection = None
+        try:
+            connection = sqlite3.connect(uri, uri=True, timeout=3)
+            row = connection.execute(
+                """SELECT AVG(duration_ms) FROM discogs_tracks
+                    WHERE release_id = ? AND track_type = 'track' AND duration_ms > 0""",
+                (release_id,),
+            ).fetchone()
+            return float(row[0]) / 1000 if row and row[0] else None
+        except (sqlite3.Error, OSError, ValueError):
+            return None
+        finally:
+            if connection is not None:
+                connection.close()
+
 
 def apply_match(track, match: dict, options: dict) -> None:
     """Apply cached release/master fields while retaining provider fallback values."""
     track.discogs_release_id = str(match.get("release_id") or "")
     track.discogs_master_id = str(match.get("master_id") or "")
+    track.discogs_track_sequence = match.get("sequence")
     track.title = match.get("track_title") or track.title
     track.artist = match.get("track_artists") or match.get("album_artists") or track.artist
     track.album = match.get("album") or track.album

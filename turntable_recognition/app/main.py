@@ -47,6 +47,7 @@ class Track:
     master_year: str = ""
     discogs_release_id: str = ""
     discogs_master_id: str = ""
+    discogs_track_sequence: int | None = None
     spotify_url: str = ""
     apple_music_url: str = ""
     provider: str = ""
@@ -465,7 +466,7 @@ class HomeAssistantPublisher:
     def publish_track(self, track: Track, status: str, day_count: int, month_count: int,
                       diagnostics: dict[str, Any] | None = None) -> None:
         attributes = asdict(track)
-        if status == "recognized" and track.artwork_url:
+        if status in {"recognized", "predicted"} and track.artwork_url:
             try:
                 color = dominant_artwork_color(track.artwork_url)
                 if color:
@@ -482,7 +483,9 @@ class HomeAssistantPublisher:
                 "friendly_name": "Turntable Now Playing",
                 "icon": "mdi:album",
                 "recognition_status": status,
-                "recognized_at": datetime.now(timezone.utc).isoformat(),
+                "is_prediction": status == "predicted",
+                "recognized_at": datetime.now(timezone.utc).isoformat() if status == "recognized" else None,
+                "predicted_at": datetime.now(timezone.utc).isoformat() if status == "predicted" else None,
                 "requests_today": day_count,
                 "requests_this_month": month_count,
             }
@@ -497,6 +500,26 @@ class HomeAssistantPublisher:
         for suffix, (state, name, icon) in simple.items():
             self.set_state(suffix, state, {"friendly_name": name, "icon": icon})
         self.publish_status(status, day_count, month_count, details=diagnostics)
+
+    def publish_predicted_next(self, metadata: dict[str, Any] | None) -> None:
+        if not metadata:
+            self.set_state("predicted_next", "No prediction", {
+                "friendly_name": "Turntable Predicted Next Track", "icon": "mdi:album",
+                "available": False,
+            })
+            return
+        self.set_state("predicted_next", str(metadata.get("title") or "Unknown track"), {
+            **metadata,
+            "friendly_name": "Turntable Predicted Next Track", "icon": "mdi:album",
+            "available": True, "prediction_source": "Discogs release track order",
+        })
+
+    def publish_prediction(self, metadata: dict[str, Any], next_metadata: dict[str, Any] | None = None,
+                           diagnostics: dict[str, Any] | None = None) -> None:
+        self.publish_predicted_next(next_metadata)
+        fields = Track.__dataclass_fields__
+        predicted_track = Track(**{key: value for key, value in metadata.items() if key in fields})
+        self.publish_track(predicted_track, "predicted", *self.limiter.counts(), diagnostics=diagnostics)
 
     def record_play(self, track: Track, session_id: str) -> None:
         entries = self.play_history.record(asdict(track), session_id)

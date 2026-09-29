@@ -59,7 +59,9 @@ The app does not edit your existing dashboard or install Tidbyt automations. Its
 
 Failed WAVs and timestamped JSON sidecars live under `/media/turntable_recognition/failed_samples`. Browse them in **Media → My media → turntable_recognition → failed_samples**. The media folder is authenticated in Home Assistant. The archive contains audio from your records; oldest samples are evicted when retention is exceeded.
 
-The latest three plays are persisted in the app's `/data/play_history.json`. The newest entry backs `sensor.turntable_now_playing`; the next two entries back `sensor.turntable_previous_track` and `sensor.turntable_two_plays_ago`. Each history sensor exposes full Track metadata, including artwork/year selections, Discogs IDs, and `played_at`. Repeated same-song checks during one playback session do not count as new plays. Playing the same song in a later session does.
+The latest three confirmed plays are persisted in the app's `/data/play_history.json`. The newest entry backs `sensor.turntable_now_playing`; the next two entries back `sensor.turntable_previous_track` and `sensor.turntable_two_plays_ago`. Each history sensor exposes full Track metadata, including artwork/year selections, Discogs IDs, and `played_at`. Predicted tracks are published to Now Playing with `recognition_status: predicted` and are never added to play history. `sensor.turntable_predicted_next` holds the following Discogs track when available. Repeated same-song checks during one playback session do not count as new plays. Playing the same song in a later session does.
+
+When a confirmed track matches the cached Discogs collection, the app reads the next playable track from that same release. If recognition misses at the current song's estimated end while audio remains active, it shows that next track as a prediction and schedules the next attempt for its estimated end. Missing track lengths are estimated from the average known duration on that release; if the release has no usable durations, the app uses a clearly marked three-minute estimate. If there is no following Discogs track, it returns to the normal recognition retry backoff. When the needle/audio goes idle, Now Playing clears; the latest track context remains available to seed a prediction on the next playback session.
 
 ## Home Assistant entities
 
@@ -67,13 +69,13 @@ With the default `entity_prefix: turntable`, the app publishes:
 
 - `sensor.turntable_now_playing`, `sensor.turntable_artist`, `sensor.turntable_title`, `sensor.turntable_album`, `sensor.turntable_year`
 - `sensor.turntable_previous_track`, `sensor.turntable_two_plays_ago`
-- `sensor.turntable_playback_state`, `sensor.turntable_recognition_status`
+- `sensor.turntable_playback_state`, `sensor.turntable_recognition_status`, `sensor.turntable_predicted_next`
 - `sensor.turntable_audio_level`, `sensor.turntable_audio_peak`, `sensor.turntable_audio_signal`, `sensor.turntable_audio_input_status`
 - `sensor.turntable_audd_usage`, `sensor.turntable_audd_requests_remaining`
 
 Add built-in **Entities**, **Tile**, or **History graph** cards and search these names. The example view in [`examples/turntable-view.yaml`](examples/turntable-view.yaml) is optional and must be added to a dashboard by the user.
 
-For dedicated cards, install **Turntable Dashboard Cards** from this same GitHub repository through HACS as a **Dashboard** custom repository. Then use **Edit dashboard → Add card** and search for **Turntable Now Playing** or **Turntable Recognition Diagnostics**. The Now Playing card displays album artwork and track details; when a track is recognized, the app samples a vivid color from its artwork and publishes `dominant_color` on `sensor.turntable_now_playing`. The card applies that value to the whole card background and updates when the sensor changes. If the image is unavailable or its host is unsupported, it keeps the Home Assistant theme background. The diagnostics card shows input level, thresholds, playback and recognition state, next check, last attempt/error, and AudD usage. Both default to the `turntable` entity prefix. See the repository [README](../README.md) for HACS installation steps.
+For dedicated cards, install **Turntable Dashboard Cards** from this same GitHub repository through HACS as a **Dashboard** custom repository. Then use **Edit dashboard → Add card** and search for **Turntable Now Playing** or **Turntable Recognition Diagnostics**. The Now Playing card displays album artwork and track details, labels tentative Discogs predictions, and applies sampled artwork color to the whole card background. The diagnostics card shows input level, thresholds, playback and recognition state, next check, a live minutes/seconds countdown, last attempt/error, and AudD usage. Both default to the `turntable` entity prefix. See the repository [README](../README.md) for HACS installation steps.
 
 ### Why the app YAML does not add a custom card to the picker
 

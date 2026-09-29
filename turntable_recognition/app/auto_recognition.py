@@ -9,6 +9,7 @@ import uuid
 from datetime import datetime, timezone
 
 from diagnostics import exception_details, log_event
+from discogs_matcher import DiscogsMatcher
 from failed_samples import FailedSampleArchive
 
 
@@ -89,6 +90,10 @@ class AutomaticRecognition:
         self.retry = int(options.get("same_song_retry_seconds", 15))
         self.fallback = int(options.get("fallback_check_seconds", 60))
         self.song_end_buffer = int(options.get("song_end_buffer_seconds", 3))
+        self.discogs_matcher = None
+        self.last_track_context = None
+        self.predicted_next = None
+        self.prediction_fallback_duration = 180
 
     def status(self, status, error=""):
         details = {
@@ -115,6 +120,12 @@ class AutomaticRecognition:
                   sample_seconds=round(self.target / 64000, 2),
                   no_match_retry_base_seconds=int(self.options.get("no_match_retry_seconds", 30)))
         self.publisher.clear_track()
+        history = getattr(getattr(self.publisher, "play_history", None), "entries", [])
+        if history:
+            self.last_track_context = history[0]
+            self.predicted_next = self._next_from_track(self.last_track_context)
+        if hasattr(self.publisher, "publish_predicted_next"):
+            self.publisher.publish_predicted_next(self.predicted_next)
         self.status("idle")
         self.publish_session()
 
@@ -156,6 +167,113 @@ class AutomaticRecognition:
         self.status("input_unavailable")
         self.publish_session()
 
+    def _matcher(self):
+        if not self.options.get("discogs_enabled", False):
+            return None
+        if self.discogs_matcher is None:
+            self.discogs_matcher = DiscogsMatcher(
+                str(self.options.get("discogs_database_path") or "/share/home_apps.sqlite3")
+            )
+        return self.discogs_matcher
+
+    @staticmethod
+    def _prediction_metadata(match, options):
+        if not match:
+            return None
+        release_year = str(match.get("release_year") or "")
+        master_year = str(match.get("master_year") or "")
+        release_art = match.get("release_artwork_url") or ""
+        master_art = match.get("master_artwork_url") or ""
+        use_master_year = options.get("discogs_year_preference", "master") == "master"
+        use_master_art = options.get("discogs_artwork_preference", "master") == "master"
+        duration_ms = match.get("duration_ms")
+        duration = float(duration_ms) / 1000 if duration_ms else None
+        selected_art = (master_art or release_art) if use_master_art else (release_art or master_art)
+        return {
+            "artist": match.get("track_artists") or match.get("album_artists") or "",
+            "title": match.get("track_title") or "",
+            "album": match.get("album") or "",
+            "release_date": release_year,
+            "year": (master_year or release_year) if use_master_year else (release_year or master_year),
+            "label": "", "timecode": "", "song_link": "", "artwork_url": selected_art,
+            "release_artwork_url": release_art, "master_artwork_url": master_art,
+            "release_year": release_year, "master_year": master_year,
+            "discogs_release_id": str(match.get("release_id") or ""),
+            "discogs_master_id": str(match.get("master_id") or ""),
+            "discogs_track_sequence": match.get("sequence"),
+            "provider": "discogs_prediction", "duration_seconds": duration,
+            "position_seconds": 0, "recognized_version": match.get("track_title") or "",
+            "album_type": "Album", "artwork_source": "discogs_master" if selected_art and selected_art == master_art else "discogs_release" if selected_art else "",
+            "timing_source": "discogs_collection" if duration else "",
+            "selection_reason": "predicted from the next playable track on the matched Discogs release",
+            "prediction_status": "predicted", "predicted": True,
+        }
+
+    def _next_from_track(self, track):
+        matcher = self._matcher()
+        if matcher is None or not track:
+            return None
+        release_id = track.get("discogs_release_id") if isinstance(track, dict) else getattr(track, "discogs_release_id", "")
+        sequence = track.get("discogs_track_sequence") if isinstance(track, dict) else getattr(track, "discogs_track_sequence", None)
+        if not release_id or sequence in (None, ""):
+            artist = track.get("artist", "") if isinstance(track, dict) else getattr(track, "artist", "")
+            title = track.get("title", "") if isinstance(track, dict) else getattr(track, "title", "")
+            matched = matcher.match(artist, title) if artist and title else None
+            if not matched:
+                return None
+            release_id, sequence = matched.get("release_id"), matched.get("sequence")
+        match = matcher.next_track(release_id, sequence)
+        return self._prediction_metadata(match, self.options)
+
+    def _estimate_duration(self, metadata):
+        duration = metadata.get("duration_seconds")
+        if duration and duration > 0:
+            return float(duration)
+        matcher = self._matcher()
+        average = matcher.average_duration_seconds(metadata.get("discogs_release_id")) if matcher else None
+        metadata["duration_seconds"] = average or self.prediction_fallback_duration
+        metadata["timing_source"] = "discogs_release_average_estimate" if average else "generic_180_second_estimate"
+        metadata["duration_estimated"] = True
+        return float(metadata["duration_seconds"])
+
+    def _publish_prediction(self, metadata, next_metadata, now, error, outcome="no_match"):
+        # Keep prediction context across an idle gap so a newly started side
+        # can continue from the most recently displayed Discogs track.
+        self.last_track_context = dict(metadata)
+        duration = self._estimate_duration(metadata)
+        metadata["position_seconds"] = min(duration, self.target / 64000)
+        metadata["timing_source"] = metadata.get("timing_source") or "estimated_from_capture"
+        remaining = max(0, duration - metadata["position_seconds"])
+        self.due = now + max(self.retry, remaining + self.song_end_buffer)
+        self.reason = "predicted_song_end"
+        self.predicted_next = next_metadata
+        retry_at = datetime.fromtimestamp(self.wall_offset + self.due, timezone.utc).isoformat()
+        details = {
+            "attempt_count": self.attempt_count,
+            "last_attempt_id": self.last_attempt_id,
+            "last_attempt_at": self.last_attempt_at,
+            "last_attempt_finished_at": self.last_attempt_finished_at,
+            "last_attempt_outcome": outcome,
+            "last_attempt_error": error,
+            "last_attempt_duration_seconds": self.last_attempt_duration_seconds,
+            "consecutive_failures": self.failures,
+            "retry_seconds": max(0, round(self.due - now)),
+            "check_reason": self.reason,
+            "next_check_at": retry_at,
+            "prediction_title": metadata.get("title"),
+        }
+        log_event("discogs_next_track_predicted", level="WARNING",
+                  artist=metadata.get("artist"), title=metadata.get("title"),
+                  album=metadata.get("album"), release_id=metadata.get("discogs_release_id"),
+                  sequence=metadata.get("discogs_track_sequence"),
+                  duration_seconds=duration, timing_source=metadata.get("timing_source"),
+                  following_track=next_metadata.get("title") if next_metadata else None,
+                  retry_in_seconds=round(self.due - now), retry_at=retry_at,
+                  recognition_error=error)
+        if hasattr(self.publisher, "publish_prediction"):
+            self.publisher.publish_prediction(metadata, next_metadata, diagnostics=details)
+        self.status(outcome, error)
+
     def feed(self, pcm, rms):
         now = self.clock()
         transition = self.detector.update(rms, len(pcm) / 64000)
@@ -164,6 +282,10 @@ class AutomaticRecognition:
         elif transition == "start":
             self.generation += 1
             self.session_id = uuid.uuid4().hex
+            if self.predicted_next is None and self.last_track_context:
+                self.predicted_next = self._next_from_track(self.last_track_context)
+                if hasattr(self.publisher, "publish_predicted_next"):
+                    self.publisher.publish_predicted_next(self.predicted_next)
             self.due = now
             self.reason = "new_session"
             self.waiting_for_capture_signal = False
@@ -343,7 +465,6 @@ class AutomaticRecognition:
         if error:
             self.failures += 1
             delay = min(300, int(self.options.get("no_match_retry_seconds", 30)) * 2 ** min(self.failures - 1, 4))
-            self.due = now + delay
             self.reason = "retry_after_no_match" if "No song was recognized" in error else "retry_after_error"
             if "AudD API limit reached" in error:
                 status = "api_limit_reached"
@@ -353,6 +474,15 @@ class AutomaticRecognition:
                 status = "error"
             self.last_attempt_outcome = "no_match" if status == "no_match" else "error"
             self.last_attempt_error = error
+            candidate = self.predicted_next if status in {
+                "no_match", "error", "api_limit_reached", "daily_limit_reached"
+            } else None
+            if candidate:
+                following = self._next_from_track(candidate)
+                self._publish_prediction(candidate, following, now, error, status)
+                self.publish_session()
+                return
+            self.due = now + delay
             retry_at = datetime.fromtimestamp(self.wall_offset + self.due, timezone.utc).isoformat()
             log_event("recognition_retry_scheduled", level="WARNING" if status == "no_match" else "ERROR",
                       attempt_id=self.last_attempt_id, outcome=self.last_attempt_outcome,
@@ -380,6 +510,25 @@ class AutomaticRecognition:
             log_event("track_position_estimated", artist=track.artist, title=track.title,
                       duration_seconds=track.duration_seconds, position_seconds=track.position_seconds,
                       source="discogs_duration_and_capture_elapsed", is_new_track=new_play)
+        matcher = self._matcher()
+        if matcher and getattr(track, "discogs_release_id", "") and not getattr(track, "duration_seconds", None):
+            average = matcher.average_duration_seconds(track.discogs_release_id)
+            if average:
+                track.duration_seconds = average
+                track.timing_source = (getattr(track, "timing_source", "") +
+                                       "+discogs_release_average_estimate").lstrip("+")
+                if not getattr(track, "position_seconds", None):
+                    track.position_seconds = getattr(track, "sample_seconds", None) or self.target / 64000
+                log_event("track_duration_estimated_from_release", artist=track.artist,
+                          title=track.title, release_id=track.discogs_release_id,
+                          duration_seconds=average)
+        self.last_track_context = {
+            key: getattr(track, key, None) for key in
+            ("artist", "title", "album", "discogs_release_id", "discogs_track_sequence")
+        }
+        self.predicted_next = self._next_from_track(track)
+        if hasattr(self.publisher, "publish_predicted_next"):
+            self.publisher.publish_predicted_next(self.predicted_next)
         self.estimated_position_seconds = getattr(track, "position_seconds", None)
         self.last_recognized_monotonic = now
         if not new_play:

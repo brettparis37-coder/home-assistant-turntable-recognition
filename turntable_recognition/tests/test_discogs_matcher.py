@@ -56,6 +56,26 @@ class MatcherTests(unittest.TestCase):
         self.assertEqual(match["release_artwork_url"], "https://release/art.jpg")
         self.assertEqual(match["master_artwork_url"], "https://master/art.jpg")
         self.assertEqual(match["duration_ms"], 205000)
+        self.assertEqual(match["sequence"], 1)
+
+    def test_next_track_uses_same_release_and_skips_non_track_entries(self):
+        db = sqlite3.connect(self.path)
+        db.execute("INSERT INTO discogs_tracks VALUES ('10:3', 10, 3, 'Interlude', 'A2', 'index', NULL)")
+        db.execute("INSERT INTO discogs_tracks VALUES ('10:4', 10, 4, 'Next Track', 'A3', 'track', 180000)")
+        db.execute("INSERT INTO discogs_track_credits VALUES ('10:4', 1)")
+        db.commit()
+        db.close()
+
+        matcher = DiscogsMatcher(str(self.path))
+        following = matcher.next_track(10, 2)
+        self.assertEqual(following["track_title"], "Next Track")
+        self.assertEqual(following["sequence"], 4)
+        self.assertEqual(following["release_id"], 10)
+        self.assertIsNone(matcher.next_track(10, 4))
+
+    def test_average_duration_uses_playable_tracks_on_release(self):
+        matcher = DiscogsMatcher(str(self.path))
+        self.assertEqual(matcher.average_duration_seconds(10), 205)
 
     def test_no_track_match_returns_none(self):
         matcher = DiscogsMatcher(str(self.path))
@@ -82,7 +102,7 @@ class MatcherTests(unittest.TestCase):
             "track_title": "A Great Song!", "track_artists": "The Artist",
             "release_year": 1978, "master_year": 1977,
             "release_artwork_url": "release.jpg", "master_artwork_url": "master.jpg",
-            "duration_ms": 205000,
+            "duration_ms": 205000, "sequence": 1,
         }, {"discogs_year_preference": "master", "discogs_artwork_preference": "release"})
         self.assertEqual(track.release_year, "1978")
         self.assertEqual(track.master_year, "1977")
@@ -93,6 +113,7 @@ class MatcherTests(unittest.TestCase):
         self.assertEqual(track.artist, "The Artist")
         self.assertEqual(track.duration_seconds, 205)
         self.assertEqual(track.timing_source, "discogs_collection")
+        self.assertEqual(track.discogs_track_sequence, 1)
         track.duration_seconds = 180
         track.timing_source = "spotify"
         apply_match(track, {"duration_ms": 205000}, {})
