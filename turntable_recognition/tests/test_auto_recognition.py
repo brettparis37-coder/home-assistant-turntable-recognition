@@ -97,6 +97,20 @@ class AutoTests(unittest.TestCase):
         for duration, position in [(None, "1:00"), (10, "bad"), (10, "1:00"), (float('nan'), "0")]:
             self.assertEqual(timing(duration, position), (None, None))
 
+    def test_track_position_estimate_advances_to_estimated_song_end(self):
+        first = track(duration=240, position=None)
+        first.sample_seconds = 15
+        self.result(first)
+        self.assertEqual(first.position_seconds, 15)
+        self.assertEqual(self.worker.reason, "estimated_song_end")
+        self.assertEqual(self.worker.due, self.now + 228)
+        self.now += 30
+        second = track(duration=240, position=None)
+        second.sample_seconds = 15
+        self.result(second)
+        self.assertEqual(second.position_seconds, 45)
+        self.assertEqual(self.worker.reason, "same_song_retry")
+
     def test_error_backoff_bounded(self):
         for expected in (30, 60, 120, 240, 300, 300):
             self.result(None, "No song was recognized")
@@ -157,6 +171,7 @@ class AutoTests(unittest.TestCase):
         self.assertEqual(len(self.worker.data), 64000)
 
     def test_quota_stops_capture(self):
+        self.worker.options["shazam_enabled"] = False
         self.limiter.used = 100
         self.worker.feed(bytes(64000), -20)
         self.worker.feed(bytes(64000), -20)
@@ -174,7 +189,7 @@ class AutoTests(unittest.TestCase):
                 return track()
         self.worker.provider_factory = lambda token: Provider()
         self.worker.recognize(bytes(64000), 0, 80)
-        self.assertEqual(self.limiter.used, 1)
+        self.assertEqual(self.limiter.used, 0)
         self.assertEqual(self.worker.results.qsize(), 1)
         self.assertFalse(os.path.exists(paths[0]))
 
