@@ -178,7 +178,9 @@ class AudDProvider(Provider):
             base.recognized_version = base.title
             base.album_type = "Album"
             base.isrc = str(((spotify.get("external_ids") or {}).get("isrc")) or apple_music.get("isrc") or "")
-            base.timing_source = "spotify" if spotify.get("duration_ms") else "apple_music" if apple_music.get("durationInMillis") else ""
+            base.timing_source = ("spotify" if spotify.get("duration_ms") else
+                                  "apple_music" if apple_music.get("durationInMillis") else
+                                  base.timing_source)
             log_event("discogs_match_selected", artist=base.artist, title=base.title,
                       album=base.album, release_year=base.release_year, master_year=base.master_year,
                       release_id=base.discogs_release_id, master_id=base.discogs_master_id,
@@ -209,6 +211,117 @@ class AudDProvider(Provider):
             base.release_year = base.year
             base.release_artwork_url = base.artwork_url
         return base
+
+
+class HybridProvider(Provider):
+    """Try Shazam first, and spend an AudD request only when it is needed."""
+
+    name = "shazamio+audd"
+
+    def __init__(self, token: str, options: dict[str, Any] | None = None,
+                 audd_request_callback=None) -> None:
+        self.token = token
+        self.options = options or {}
+        self.audd_request_callback = audd_request_callback
+        self.audd_request_sent = False
+
+    @staticmethod
+    def _shazam_track(payload: dict[str, Any]) -> Track | None:
+        item = payload.get("track") if isinstance(payload, dict) else None
+        if not isinstance(item, dict):
+            return None
+        artist = str(item.get("subtitle") or item.get("artist") or "").strip()
+        title = str(item.get("title") or "").strip()
+        if not artist or not title:
+            return None
+        images = item.get("images") or {}
+        artwork = str(images.get("coverarthq") or images.get("coverart") or "")
+        metadata = {}
+        for section in item.get("sections") or []:
+            for entry in section.get("metadata") or []:
+                key = str(entry.get("title") or "").casefold()
+                value = str(entry.get("text") or "")
+                if key and value:
+                    metadata[key] = value
+        album = str(item.get("album") or metadata.get("album") or "")
+        release_date = metadata.get("released", "")
+        year_match = re.match(r"^(\d{4})", release_date)
+        return Track(artist=artist, title=title, album=album, release_date=release_date,
+                     year=year_match.group(1) if year_match else "", artwork_url=artwork,
+                     provider="shazamio", artwork_source="shazamio" if artwork else "")
+
+    def _recognize_shazam(self, source: str, source_is_url: bool) -> Track | None:
+        if source_is_url:
+            log_event("shazam_skipped", level="WARNING", reason="Shazam source requires a local audio file")
+            return None
+        try:
+            from shazamio import Shazam
+            import asyncio
+
+            async def recognize_and_close():
+                shazam = Shazam()
+                return await shazam.recognize(source)
+
+            payload = asyncio.run(recognize_and_close())
+            track = self._shazam_track(payload)
+            log_event("shazam_response_received", has_match=bool(track),
+                      artist=track.artist if track else None, title=track.title if track else None,
+                      response_fields=sorted(payload.keys()) if isinstance(payload, dict) else [])
+            if not track:
+                log_event("shazam_no_match", level="WARNING",
+                          explanation="Shazam returned no usable artist/title match")
+                return None
+            self._enrich_discogs(track)
+            return track
+        except Exception as exc:
+            log_event("shazam_failed", level="WARNING", **exception_details(exc))
+            return None
+
+    def _enrich_discogs(self, track: Track) -> None:
+        if not self.options.get("discogs_enabled", False):
+            return
+        matcher = DiscogsMatcher(str(self.options.get("discogs_database_path") or "/share/home_apps.sqlite3"))
+        try:
+            match = matcher.match(track.artist, track.title)
+            if match:
+                original_artwork = track.artwork_url
+                apply_match(track, match, self.options)
+                if not track.artwork_url:
+                    track.artwork_url = original_artwork
+                if track.artwork_url and not track.artwork_source:
+                    track.artwork_source = "shazamio"
+                track.recognized_version = track.title
+                track.album_type = "Album"
+                log_event("discogs_match_selected", artist=track.artist, title=track.title,
+                          album=track.album, release_year=track.release_year,
+                          master_year=track.master_year, release_id=track.discogs_release_id,
+                          master_id=track.discogs_master_id, provider="shazamio",
+                          track_duration_seconds=track.duration_seconds,
+                          timing_source=track.timing_source)
+            else:
+                log_event("discogs_match_not_found", level="INFO", artist=track.artist,
+                          title=track.title, diagnostics=matcher.last_diagnostics,
+                          fallback="retain Shazam metadata")
+        except Exception as exc:
+            log_event("discogs_match_failed", level="WARNING", artist=track.artist,
+                      title=track.title, **exception_details(exc))
+
+    def recognize(self, source: str, source_is_url: bool) -> Track:
+        if self.options.get("shazam_enabled", True):
+            track = self._recognize_shazam(source, source_is_url)
+            if track:
+                return track
+            log_event("recognition_provider_fallback", from_provider="shazamio", to_provider="audd",
+                      reason="no_match_or_provider_error")
+
+        if not self.token:
+            raise RecognitionError("Shazam did not recognize this sample and no AudD token is configured")
+        if self.audd_request_callback:
+            counts = self.audd_request_callback()
+            self.audd_request_sent = True
+            log_event("audd_request_sent", requests_today=counts[0], requests_this_cycle=counts[1],
+                      fallback_from="shazamio")
+        return AudDProvider(self.token, self.options).recognize(source, source_is_url)
 
 
 class UsageLimiter:
@@ -451,7 +564,7 @@ def main() -> int:
     )
     publisher = HomeAssistantPublisher(options.get("entity_prefix", "turntable"), limiter)
     publisher.publish_play_history()
-    provider_factory = lambda token: AudDProvider(token, options)
+    provider_factory = lambda token: HybridProvider(token, options, limiter.consume)
     if mode == "usb_auto":
         automatic = AutomaticRecognition(options, publisher, limiter, provider_factory)
         automatic.start()
