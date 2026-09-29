@@ -37,8 +37,11 @@ class TurntableNowPlayingCard extends HTMLElement {
     const album = attributes.album || "";
     const year = attributes.year || attributes.master_year || attributes.release_year || "";
     const artwork = attributes.artwork_url || attributes.master_artwork_url || attributes.release_artwork_url || "";
+    const dominantColor = /^#[0-9a-f]{6}$/i.test(attributes.dominant_color || "")
+      ? attributes.dominant_color : "";
     const idle = !entity || !title || ["unknown", "unavailable", "Nothing playing"].includes(entity.state);
-    const renderKey = JSON.stringify([entity?.state, title, artist, album, year, artwork, idle]);
+    const renderKey = JSON.stringify([entity?.state, title, artist, album, year, artwork,
+      attributes.recognition_status, attributes.dominant_color, idle]);
     if (renderKey === this._renderKey) return;
     this._renderKey = renderKey;
 
@@ -49,9 +52,12 @@ class TurntableNowPlayingCard extends HTMLElement {
           box-sizing: border-box;
           padding: 18px;
           color: var(--primary-text-color);
-          background: var(--ha-card-background, var(--card-background-color, var(--primary-background-color)));
+          background-color: var(--ha-card-background, var(--card-background-color, var(--primary-background-color)));
           overflow: hidden;
+          transition: background-color .45s ease;
         }
+        ha-card.colored { color: #fff; }
+        ha-card.colored .eyebrow, ha-card.colored .album, ha-card.colored .year { color: rgb(255 255 255 / 80%); }
         .layout { display: grid; grid-template-columns: minmax(96px, 34%) 1fr; gap: 18px; align-items: center; min-height: 132px; }
         .cover { width: 100%; aspect-ratio: 1; border-radius: 12px; object-fit: cover; background: var(--secondary-background-color); }
         .placeholder { display: grid; place-items: center; width: 100%; aspect-ratio: 1; border-radius: 12px; background: var(--secondary-background-color); color: var(--secondary-text-color); font-size: 42px; }
@@ -68,7 +74,7 @@ class TurntableNowPlayingCard extends HTMLElement {
           .album, .year { font-size: 12px; }
         }
       </style>
-      <ha-card>
+      <ha-card class="${dominantColor ? "colored" : ""}" style="background-color:${dominantColor || "var(--ha-card-background, var(--card-background-color, var(--primary-background-color)))"}">
         <div class="layout ${idle ? "idle" : ""}">
           <div class="art"></div>
           <div class="details">
