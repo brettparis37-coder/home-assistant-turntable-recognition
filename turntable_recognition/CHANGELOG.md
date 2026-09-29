@@ -1,3 +1,8 @@
+# 0.12.0
+
+- Sample a vivid dominant color from recognized album artwork and publish it with the now-playing sensor.
+- Apply that color to the full Now Playing card background and update it live when recognition changes.
+
 # 0.11.0
 
 - Set USB automatic recognition as the default, remove mock, URL, media-file, and simulated-USB modes and their settings, and keep USB meter/manual recognition as the diagnostic mode.
