@@ -23,7 +23,7 @@ Install **Turntable Recognition**. Configure the AudD token, use `usb_auto` for 
 4. Find **Turntable Dashboard Cards** in HACS and download it.
 5. Refresh Home Assistant. In a dashboard, choose **Edit dashboard → Add card** and search for **Turntable Now Playing** or **Turntable Recognition Diagnostics**. Both cards default to the app's `turntable` sensor prefix.
 
-The Now Playing card renders `artwork_url` (with release/master artwork fallbacks), title, artist, album, and year. The diagnostics card shows recognition state and feedback, live dBFS level and threshold, USB input status, playback/next-check details, last attempt and errors, and AudD cycle usage. If HACS does not register the resource automatically, add `/hacsfiles/home-assistant-turntable-recognition/home-assistant-turntable-recognition.js` as a JavaScript module under **Settings → Dashboards → Resources**.
+The Now Playing card renders `artwork_url` (with release/master artwork fallbacks), title, artist, album, and year. When a track is recognized, the app samples a vivid color from its album art and applies it to the full card background; the color arrives as a sensor attribute and updates the card live. The diagnostics card shows recognition state and feedback, live dBFS level and threshold, USB input status, playback/next-check details, last attempt and errors, and AudD cycle usage. If HACS does not register the resource automatically, add `/hacsfiles/home-assistant-turntable-recognition/home-assistant-turntable-recognition.js` as a JavaScript module under **Settings → Dashboards → Resources**.
 
 If Home Assistant is 2026.6 or newer, the card can also be suggested when selecting the now-playing entity in the card picker.
 
