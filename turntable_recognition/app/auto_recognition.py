@@ -74,6 +74,8 @@ class AutomaticRecognition:
         self.last_failed_sample = None
         self.due = None
         self.identity = None
+        self.estimated_position_seconds = None
+        self.last_recognized_monotonic = None
         self.session_id = None
         self.failures = 0
         self.attempt_count = 0
@@ -203,7 +205,8 @@ class AutomaticRecognition:
                                   action="begin_fresh_sample")
                     self.waiting_for_capture_signal = False
                     day, month = self.limiter.counts()
-                    if day >= self.limiter.daily_limit or month >= self.limiter.monthly_limit:
+                    shazam_enabled = self.options.get("shazam_enabled", True)
+                    if not shazam_enabled and (day >= self.limiter.daily_limit or month >= self.limiter.monthly_limit):
                         self.due = now + 60
                         self.reason = "request_limit"
                         details = self.limiter.details()
@@ -275,7 +278,7 @@ class AutomaticRecognition:
         request_started = time.monotonic()
         request_sent = False
         log_event("recognition_attempt_started", attempt_id=self.last_attempt_id,
-                  provider="audd", captured_bytes=len(pcm),
+                  provider="shazamio_then_audd", captured_bytes=len(pcm),
                   sample_seconds=round(len(pcm) / 64000, 2))
         try:
             provider = self.provider_factory(str(self.options.get("audd_api_token", "")))
@@ -286,18 +289,17 @@ class AutomaticRecognition:
                     output.setsampwidth(2)
                     output.setframerate(16000)
                     output.writeframes(pcm)
-                self.limiter.consume()
-                request_sent = True
-                log_event("audd_request_sent", attempt_id=self.last_attempt_id,
-                          requests_today=self.limiter.counts()[0],
-                          requests_this_cycle=self.limiter.counts()[1])
                 track = provider.recognize(path, False)
+                request_sent = bool(getattr(provider, "audd_request_sent", False))
+                if getattr(track, "duration_seconds", None) and not getattr(track, "position_seconds", None):
+                    track.sample_seconds = round(len(pcm) / 64000, 2)
                 log_event("provider_pipeline_completed", attempt_id=self.last_attempt_id,
                           processing_seconds=round(time.monotonic() - request_started, 3),
                           recognized_artist=getattr(track, "artist", ""),
                           recognized_title=getattr(track, "title", ""),
                           provider=getattr(track, "provider", "audd"))
         except Exception as exc:
+            request_sent = request_sent or bool(getattr(locals().get("provider", None), "audd_request_sent", False))
             error = str(exc)
             log_event("recognition_attempt_failed", level="ERROR", attempt_id=self.last_attempt_id,
                       request_sent=request_sent,
@@ -308,7 +310,7 @@ class AutomaticRecognition:
         secret = str(self.options.get("audd_api_token", ""))
         if secret:
             error = error.replace(secret, "[redacted]")
-        if request_sent and error:
+        if error:
             try:
                 archived = self.failed_sample_archive.save(
                     pcm, self.last_attempt_id, error, capture_stats
@@ -365,6 +367,21 @@ class AutomaticRecognition:
         self.last_attempt_error = ""
         identity = tuple(" ".join(value.casefold().split()) for value in (track.artist, track.title))
         new_play = identity != self.identity
+        if getattr(track, "duration_seconds", None) and not getattr(track, "position_seconds", None):
+            if not new_play and self.estimated_position_seconds is not None and self.last_recognized_monotonic is not None:
+                estimate = self.estimated_position_seconds + max(0, now - self.last_recognized_monotonic)
+            else:
+                # The first capture begins as playback starts. Its complete
+                # captured length is a practical estimate of position when a
+                # provider (including Shazam) does not report a timecode.
+                estimate = getattr(track, "sample_seconds", None) or self.target / 64000
+            track.position_seconds = max(0, min(float(track.duration_seconds) - 0.1, estimate))
+            track.timing_source = (getattr(track, "timing_source", "") + "+estimated_position_from_capture").lstrip("+")
+            log_event("track_position_estimated", artist=track.artist, title=track.title,
+                      duration_seconds=track.duration_seconds, position_seconds=track.position_seconds,
+                      source="discogs_duration_and_capture_elapsed", is_new_track=new_play)
+        self.estimated_position_seconds = getattr(track, "position_seconds", None)
+        self.last_recognized_monotonic = now
         if not new_play:
             self.due = now + self.retry
             self.reason = "same_song_retry"
