@@ -2,7 +2,7 @@
 
 ## What the app does
 
-The app monitors the Behringer UFO202 input through Home Assistant's PulseAudio source, detects playback, captures a bounded WAV, asks AudD to identify it, enriches matched metadata, optionally checks the local Discogs collection, and publishes sensors through the Home Assistant API. It also publishes audio-level and AudD usage sensors, logs timestamped diagnostics, archives a bounded number of failed samples, and stores the latest three play events.
+The app monitors the Behringer UFO202 input through Home Assistant's PulseAudio source, detects playback, captures a bounded WAV, asks Shazam first and uses AudD only when Shazam has no match or errors, enriches matched metadata, checks the local Discogs collection, and publishes sensors through the Home Assistant API. Discogs track duration fills missing provider duration; when position is missing, the app estimates it from the initial captured audio length and advances the estimate with elapsed time on same-song checks. It also publishes audio-level and AudD usage sensors, logs timestamped diagnostics, archives a bounded number of failed samples, and stores the latest three play events.
 
 The app does not edit your existing dashboard or install Tidbyt automations. Its entities are available to the standard Lovelace entity picker. Hue dial and Tidbyt scripts/automations remain separate Home Assistant configuration.
 
@@ -28,7 +28,7 @@ The app does not edit your existing dashboard or install Tidbyt automations. Its
 | `playback_stop_seconds` | `15` | Quiet hold time before returning to idle and clearing now-playing. |
 | `song_end_buffer_seconds` | `3` | Wait after estimated track end before checking for another song. |
 | `same_song_retry_seconds` | `15` | Retry delay when the next recognition is still the same track. |
-| `fallback_check_seconds` | `60` | Check delay when duration or position is unavailable. |
+| `fallback_check_seconds` | `60` | Check delay when duration is unavailable. When the collection has a track duration but no provider timecode, the app estimates position from captured sample length, then advances it by elapsed time on same-song checks. |
 | `no_match_retry_seconds` | `30` | Base delay for no-match and request errors; the app backs off up to 300 seconds. |
 
 ### AudD request limits
@@ -36,6 +36,7 @@ The app does not edit your existing dashboard or install Tidbyt automations. Its
 | Option | Default | Purpose |
 | --- | --- | --- |
 | `audd_api_token` | empty | Your private AudD token. Never place it in repository files. |
+| `shazam_enabled` | `true` | Try ShazamIO first. Turn this off to use AudD directly. Shazam checks do not count against AudD usage limits. |
 | `max_requests_per_day` | `100` | Local safety cap. |
 | `max_requests_per_month` | `1000` | Local safety cap for the current billing cycle. |
 | `billing_cycle_day` | `25` | First day of the configured monthly cycle. |
@@ -44,7 +45,7 @@ The app does not edit your existing dashboard or install Tidbyt automations. Its
 
 | Option | Default | Purpose |
 | --- | --- | --- |
-| `discogs_enabled` | `false` | Match AudD artist/title against the locally cached Discogs collection. |
+| `discogs_enabled` | `true` | Match recognized artist/title against the locally cached Discogs collection for album, artwork, year, and track duration. |
 | `discogs_database_path` | `/share/home_apps.sqlite3` | Shared database created by Discogs Connector. |
 | `discogs_artwork_preference` | `master` | Choose master or specific-release artwork for the familiar `artwork_url`; both values remain in attributes. |
 | `discogs_year_preference` | `master` | Choose original master year or specific-release year for `year`; both values remain in attributes. |
@@ -53,7 +54,7 @@ The app does not edit your existing dashboard or install Tidbyt automations. Its
 
 | Option | Default | Purpose |
 | --- | --- | --- |
-| `failed_sample_retention` | `5` | Keep up to this many submitted automatic WAV requests that AudD fails to recognize or rejects. Range 0–20; 0 disables archiving. Successful captures are discarded. |
+| `failed_sample_retention` | `5` | Keep up to this many captured WAV samples that the recognition pipeline fails to identify. Range 0–20; 0 disables archiving. Successful captures are discarded. |
 | `entity_prefix` | `turntable` | Prefix for published entity IDs. Keep this unchanged after adding dashboards or automations. |
 
 Failed WAVs and timestamped JSON sidecars live under `/media/turntable_recognition/failed_samples`. Browse them in **Media → My media → turntable_recognition → failed_samples**. The media folder is authenticated in Home Assistant. The archive contains audio from your records; oldest samples are evicted when retention is exceeded.
@@ -72,7 +73,7 @@ With the default `entity_prefix: turntable`, the app publishes:
 
 Add built-in **Entities**, **Tile**, or **History graph** cards and search these names. The example view in [`examples/turntable-view.yaml`](examples/turntable-view.yaml) is optional and must be added to a dashboard by the user.
 
-For dedicated cards, install **Turntable Dashboard Cards** from this same GitHub repository through HACS as a **Dashboard** custom repository. Then use **Edit dashboard → Add card** and search for **Turntable Now Playing** or **Turntable Recognition Diagnostics**. The Now Playing card displays album artwork and track details; when a track is recognized, the app samples a vivid color from its artwork and publishes `dominant_color` on `sensor.turntable_now_playing`. The card applies it to the whole card background and updates when the sensor changes. If the artwork is unavailable or its host is unsupported, it keeps the Home Assistant theme background. The diagnostics card shows input level, thresholds, playback and recognition state, next check, last attempt/error, and AudD usage. Both default to the `turntable` entity prefix. See the repository [README](../README.md) for HACS installation steps.
+For dedicated cards, install **Turntable Dashboard Cards** from this same GitHub repository through HACS as a **Dashboard** custom repository. Then use **Edit dashboard → Add card** and search for **Turntable Now Playing** or **Turntable Recognition Diagnostics**. The Now Playing card displays album artwork and track details; when a track is recognized, the app samples a vivid color from its artwork and publishes `dominant_color` on `sensor.turntable_now_playing`. The card applies that value to the whole card background and updates when the sensor changes. If the image is unavailable or its host is unsupported, it keeps the Home Assistant theme background. The diagnostics card shows input level, thresholds, playback and recognition state, next check, last attempt/error, and AudD usage. Both default to the `turntable` entity prefix. See the repository [README](../README.md) for HACS installation steps.
 
 ### Why the app YAML does not add a custom card to the picker
 
@@ -86,9 +87,9 @@ Automatic selection looks for one non-monitor input whose PulseAudio name/proper
 
 ## Diagnostics and manual recognition
 
-Open **Settings → Apps → Turntable Recognition → Log**. The logs use UTC timestamps and include selected source, input dBFS, capture length/level range, AudD response, Discogs match diagnostics, retry timing, and detailed errors. No-match is a successful API response with `result: null`; it is not an authentication failure.
+Open **Settings → Apps → Turntable Recognition → Log**. The logs use UTC timestamps and include selected source, input dBFS, capture length/level range, Shazam result/error, whether the pipeline fell back to AudD, AudD response, Discogs match diagnostics, retry timing, and detailed errors. Only an AudD request increments its daily/monthly counters. ShazamIO uses an unofficial reverse-engineered Shazam interface, so it may stop working if that service changes; disable it in app configuration to use AudD directly.
 
-In `usb_meter` mode, a `recognize` command through `hassio.app_stdin` captures one sample and sends one AudD request. Duplicate requests while capture is active are ignored. Use `usb_auto` for the normal playback workflow.
+In `usb_meter` mode, a `recognize` command through `hassio.app_stdin` captures one sample and runs the same Shazam-first/AudD-fallback pipeline. Duplicate requests while capture is active are ignored. Use `usb_auto` for the normal playback workflow.
 
 ## Dashboard examples and app testing
 
