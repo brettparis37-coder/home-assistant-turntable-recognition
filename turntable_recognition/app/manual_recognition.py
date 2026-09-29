@@ -90,9 +90,10 @@ class ManualRecognition:
                     output.setsampwidth(2)
                     output.setframerate(16000)
                     output.writeframes(pcm)
-                day, month = self.limiter.consume()
+                day, month = self.limiter.counts()
                 self.publisher.publish_status("recognizing", day, month)
                 track = provider.recognize(path, False)
+                day, month = self.limiter.counts()
                 self.publisher.publish_track(track, "recognized", day, month)
                 if hasattr(self.publisher, "record_play"):
                     self.publisher.record_play(track, uuid.uuid4().hex)
