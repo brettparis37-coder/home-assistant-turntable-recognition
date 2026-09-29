@@ -21,6 +21,7 @@ from album_resolver import resolve_audd_payload
 from discogs_matcher import DiscogsMatcher, apply_match
 from diagnostics import exception_details, log_event
 from play_history import PlayHistory
+from artwork_color import dominant_artwork_color
 
 
 OPTIONS_PATH = Path("/data/options.json")
@@ -315,6 +316,18 @@ class HomeAssistantPublisher:
     def publish_track(self, track: Track, status: str, day_count: int, month_count: int,
                       diagnostics: dict[str, Any] | None = None) -> None:
         attributes = asdict(track)
+        if status == "recognized" and track.artwork_url:
+            try:
+                color = dominant_artwork_color(track.artwork_url)
+                if color:
+                    attributes["dominant_color"] = color
+                log_event("now_playing_artwork_color", color=color or "unavailable",
+                          artwork_source=track.artwork_source,
+                          release_id=track.discogs_release_id or None)
+            except Exception as exc:
+                log_event("now_playing_artwork_color_failed", level="WARNING",
+                          artwork_source=track.artwork_source,
+                          **exception_details(exc))
         attributes.update(
             {
                 "friendly_name": "Turntable Now Playing",
