@@ -1,6 +1,6 @@
 # Turntable Recognition
 
-Version 0.11.0 focuses the app on the Behringer UFO202 USB input, with automatic recognition, a USB meter/manual diagnostic mode, Discogs collection matching, timestamped diagnostics, a five-sample failed-audio cache, and persistent history for the latest three plays.
+Version 0.12.0 focuses the app on the Behringer UFO202 USB input, with automatic recognition, a USB meter/manual diagnostic mode, Discogs collection matching, timestamped diagnostics, a five-sample failed-audio cache, and persistent history for the latest three plays, and live album-art color on the Now Playing card.
 
 ## Install and configure
 
