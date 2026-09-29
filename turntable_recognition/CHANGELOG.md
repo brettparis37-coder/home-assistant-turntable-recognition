@@ -1,3 +1,8 @@
+# 0.13.1
+
+- Try the Rust Shazam recognizer first, then the slower legacy Shazam recognizer after a no-match or error, before using AudD.
+- Enrich the first Shazam match from the local Discogs collection and log which Shazam method matched plus response match counts.
+
 # 0.13.0
 
 - Add ShazamIO as the first-pass music recognizer, with AudD used only after a Shazam no-match or failure.

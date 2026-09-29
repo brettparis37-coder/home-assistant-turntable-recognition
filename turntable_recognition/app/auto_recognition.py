@@ -278,7 +278,7 @@ class AutomaticRecognition:
         request_started = time.monotonic()
         request_sent = False
         log_event("recognition_attempt_started", attempt_id=self.last_attempt_id,
-                  provider="shazamio_then_audd", captured_bytes=len(pcm),
+                  provider="shazamio_rust_then_legacy_then_audd", captured_bytes=len(pcm),
                   sample_seconds=round(len(pcm) / 64000, 2))
         try:
             provider = self.provider_factory(str(self.options.get("audd_api_token", "")))

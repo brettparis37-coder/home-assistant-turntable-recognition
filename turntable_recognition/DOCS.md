@@ -36,7 +36,7 @@ The app does not edit your existing dashboard or install Tidbyt automations. Its
 | Option | Default | Purpose |
 | --- | --- | --- |
 | `audd_api_token` | empty | Your private AudD token. Never place it in repository files. |
-| `shazam_enabled` | `true` | Try ShazamIO first. Turn this off to use AudD directly. Shazam checks do not count against AudD usage limits. |
+| `shazam_enabled` | `true` | Try ShazamIO's Rust recognizer, then its slower legacy recognizer after a miss. AudD is used only if both miss. Turn this off to use AudD directly. Shazam checks do not count against AudD usage limits. |
 | `max_requests_per_day` | `100` | Local safety cap. |
 | `max_requests_per_month` | `1000` | Local safety cap for the current billing cycle. |
 | `billing_cycle_day` | `25` | First day of the configured monthly cycle. |
@@ -87,7 +87,7 @@ Automatic selection looks for one non-monitor input whose PulseAudio name/proper
 
 ## Diagnostics and manual recognition
 
-Open **Settings → Apps → Turntable Recognition → Log**. The logs use UTC timestamps and include selected source, input dBFS, capture length/level range, Shazam result/error, whether the pipeline fell back to AudD, AudD response, Discogs match diagnostics, retry timing, and detailed errors. Only an AudD request increments its daily/monthly counters. ShazamIO uses an unofficial reverse-engineered Shazam interface, so it may stop working if that service changes; disable it in app configuration to use AudD directly.
+Open **Settings → Apps → Turntable Recognition → Log**. The logs use UTC timestamps and include selected source, input dBFS, capture length/level range, Rust and legacy Shazam responses/match counts, which method matched, whether the pipeline fell back to AudD, AudD response, Discogs match diagnostics, retry timing, and detailed errors. Only an AudD request increments its daily/monthly counters. ShazamIO uses an unofficial reverse-engineered Shazam interface, so it may stop working if that service changes; disable it in app configuration to use AudD directly. Its legacy recognizer is deprecated upstream, so the app keeps it as a fallback and pins the ShazamIO version.
 
 In `usb_meter` mode, a `recognize` command through `hassio.app_stdin` captures one sample and runs the same Shazam-first/AudD-fallback pipeline. Duplicate requests while capture is active are ignored. Use `usb_auto` for the normal playback workflow.
 

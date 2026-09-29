@@ -214,9 +214,9 @@ class AudDProvider(Provider):
 
 
 class HybridProvider(Provider):
-    """Try Shazam first, and spend an AudD request only when it is needed."""
+    """Try Rust Shazam, legacy Shazam, then spend an AudD request if needed."""
 
-    name = "shazamio+audd"
+    name = "shazamio_rust+legacy+audd"
 
     def __init__(self, token: str, options: dict[str, Any] | None = None,
                  audd_request_callback=None) -> None:
@@ -258,23 +258,59 @@ class HybridProvider(Provider):
             from shazamio import Shazam
             import asyncio
 
-            async def recognize_and_close():
+            async def recognize_with_fallback():
                 shazam = Shazam()
-                return await shazam.recognize(source)
+                try:
+                    payload = await shazam.recognize(source)
+                    track = self._shazam_track(payload)
+                    log_event("shazam_rust_response_received", has_match=bool(track),
+                              artist=track.artist if track else None,
+                              title=track.title if track else None,
+                              matches_count=len(payload.get("matches") or [])
+                              if isinstance(payload, dict) else None,
+                              response_fields=sorted(payload.keys())
+                              if isinstance(payload, dict) else [])
+                    if track:
+                        return track, "rust"
+                    log_event("shazam_rust_no_match", level="WARNING",
+                              explanation="Rust recognizer returned no usable artist/title match; trying legacy recognizer")
+                except Exception as exc:
+                    log_event("shazam_rust_failed", level="WARNING", **exception_details(exc))
 
-            payload = asyncio.run(recognize_and_close())
-            track = self._shazam_track(payload)
-            log_event("shazam_response_received", has_match=bool(track),
-                      artist=track.artist if track else None, title=track.title if track else None,
-                      response_fields=sorted(payload.keys()) if isinstance(payload, dict) else [])
+                try:
+                    # Decode by filename so WAV inputs use pydub's built-in WAV
+                    # reader; the app image also includes ffmpeg for other formats.
+                    from pydub import AudioSegment
+
+                    audio = AudioSegment.from_file(source)
+                    payload = await shazam.recognize_song(audio)
+                    track = self._shazam_track(payload)
+                    log_event("shazam_legacy_response_received", has_match=bool(track),
+                              artist=track.artist if track else None,
+                              title=track.title if track else None,
+                              matches_count=len(payload.get("matches") or [])
+                              if isinstance(payload, dict) else None,
+                              response_fields=sorted(payload.keys())
+                              if isinstance(payload, dict) else [])
+                    if track:
+                        return track, "legacy"
+                    log_event("shazam_legacy_no_match", level="WARNING",
+                              explanation="Legacy recognizer returned no usable artist/title match")
+                except Exception as exc:
+                    log_event("shazam_legacy_failed", level="WARNING", **exception_details(exc))
+                return None, ""
+
+            track, recognition_method = asyncio.run(recognize_with_fallback())
             if not track:
                 log_event("shazam_no_match", level="WARNING",
-                          explanation="Shazam returned no usable artist/title match")
+                          explanation="Both Rust and legacy Shazam recognizers returned no match")
                 return None
+            log_event("shazam_match_selected", artist=track.artist, title=track.title,
+                      recognition_method=recognition_method)
             self._enrich_discogs(track)
             return track
         except Exception as exc:
-            log_event("shazam_failed", level="WARNING", **exception_details(exc))
+            log_event("shazam_pipeline_failed", level="WARNING", **exception_details(exc))
             return None
 
     def _enrich_discogs(self, track: Track) -> None:
@@ -311,8 +347,8 @@ class HybridProvider(Provider):
             track = self._recognize_shazam(source, source_is_url)
             if track:
                 return track
-            log_event("recognition_provider_fallback", from_provider="shazamio", to_provider="audd",
-                      reason="no_match_or_provider_error")
+            log_event("recognition_provider_fallback", from_provider="shazamio_rust_then_legacy",
+                      to_provider="audd", reason="both_shazam_methods_no_match_or_failed")
 
         if not self.token:
             raise RecognitionError("Shazam did not recognize this sample and no AudD token is configured")
@@ -320,7 +356,7 @@ class HybridProvider(Provider):
             counts = self.audd_request_callback()
             self.audd_request_sent = True
             log_event("audd_request_sent", requests_today=counts[0], requests_this_cycle=counts[1],
-                      fallback_from="shazamio")
+                      fallback_from="shazamio_rust_then_legacy")
         return AudDProvider(self.token, self.options).recognize(source, source_is_url)
 
 
@@ -550,7 +586,9 @@ def load_options() -> dict[str, Any]:
 def main() -> int:
     options = load_options()
     mode = options.get("input_mode", "usb_auto")
-    log_event("app_starting", input_mode=mode, provider="audd",
+    provider_pipeline = ("shazamio_rust_then_legacy_then_audd"
+                         if options.get("shazam_enabled", True) else "audd")
+    log_event("app_starting", input_mode=mode, provider=provider_pipeline,
               audio_source=options.get("audio_source", "auto") if mode in {"usb_auto", "usb_meter"} else None,
               discogs_enabled=bool(options.get("discogs_enabled", False)),
               discogs_database_path=options.get("discogs_database_path", "/share/home_apps.sqlite3")
