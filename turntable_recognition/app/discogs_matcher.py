@@ -34,8 +34,11 @@ class DiscogsMatcher:
             connection = sqlite3.connect(uri, uri=True, timeout=3)
             connection.row_factory = sqlite3.Row
             connection.execute("PRAGMA query_only = ON")
+            track_columns = {row[1] for row in connection.execute("PRAGMA table_info(discogs_tracks)")}
+            duration_expression = "t.duration_ms" if "duration_ms" in track_columns else "NULL AS duration_ms"
             rows = connection.execute(
-                """SELECT t.title AS track_title, t.position, t.sequence,
+                f"""SELECT t.title AS track_title, t.position, t.sequence,
+                          {duration_expression},
                           r.release_id, r.master_id, r.title AS album,
                           r.year AS release_year,
                           COALESCE(NULLIF(r.cover_image, ''), r.thumb) AS release_artwork_url,
@@ -135,4 +138,8 @@ def apply_match(track, match: dict, options: dict) -> None:
         track.artwork_url = selected_art
         track.artwork_source = "discogs_master" if selected_art == track.master_artwork_url else "discogs_release"
     track.selection_reason = "matched an exact track in the cached Discogs collection"
+    duration_ms = match.get("duration_ms")
+    if duration_ms and not track.duration_seconds:
+        track.duration_seconds = float(duration_ms) / 1000
+        track.timing_source = "discogs_collection"
 
