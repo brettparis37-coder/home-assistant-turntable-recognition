@@ -1,7 +1,15 @@
+# 0.13.0
+
+- Add ShazamIO as the first-pass music recognizer, with AudD used only after a Shazam no-match or failure.
+- Enrich Shazam matches from the local Discogs collection, including track duration; estimate playback position from the captured sample and elapsed time between same-song checks when no provider timecode exists.
+- Count and apply AudD daily/monthly request limits only when an AudD request is actually sent.
+- Add a `shazam_enabled` option so Shazam recognition can be turned off without removing AudD.
+- Use the official Home Assistant Debian base image so ShazamIO's native recognition wheel can install on amd64 and aarch64.
+
 # 0.12.0
 
-- Sample a vivid dominant color from recognized album artwork and publish it with the now-playing sensor.
-- Apply that color to the full Now Playing card background and update it live when recognition changes.
+- Sample a vivid album-art color on each recognized track and publish it as `dominant_color` on the Now Playing sensor.
+- Apply the sampled color to the full Now Playing card background and rerender when the color changes.
 
 # 0.11.0
 
