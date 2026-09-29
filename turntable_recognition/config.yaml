@@ -1,5 +1,5 @@
 name: Turntable Recognition
-version: "0.12.0"
+version: "0.13.0"
 slug: turntable_recognition
 description: Recognize turntable music and publish now-playing entities to Home Assistant.
 startup: application
@@ -29,13 +29,14 @@ options:
   no_match_retry_seconds: 30
   song_end_buffer_seconds: 3
   audd_api_token: ""
+  shazam_enabled: true
   sample_seconds: 15
   failed_sample_retention: 5
   entity_prefix: turntable
   max_requests_per_day: 100
   max_requests_per_month: 1000
   billing_cycle_day: 25
-  discogs_enabled: false
+  discogs_enabled: true
   discogs_database_path: /share/home_apps.sqlite3
   discogs_artwork_preference: master
   discogs_year_preference: master
@@ -53,6 +54,7 @@ schema:
   audio_threshold_dbfs: int(-100,0)
   audio_update_seconds: int(1,10)
   audd_api_token: password
+  shazam_enabled: bool
   sample_seconds: int(5,20)
   failed_sample_retention: int(0,20)
   entity_prefix: match(^[a-z0-9_]+$)
