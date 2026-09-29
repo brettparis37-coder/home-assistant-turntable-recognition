@@ -72,6 +72,8 @@ With the default `entity_prefix: turntable`, the app publishes:
 
 Add built-in **Entities**, **Tile**, or **History graph** cards and search these names. The example view in [`examples/turntable-view.yaml`](examples/turntable-view.yaml) is optional and must be added to a dashboard by the user.
 
+For a dedicated album-art card, install **Turntable Now Playing Card** from this same GitHub repository through HACS as a **Dashboard** custom repository. Then use **Edit dashboard → Add card** and search for **Turntable Now Playing**. The card defaults to `sensor.turntable_now_playing` and displays its artwork, title, artist, album, and year. See the repository [README](../README.md) for HACS installation steps.
+
 ### Why the app YAML does not add a custom card to the picker
 
 An app's `config.yaml` configures the app container and its options. Lovelace card types are separate frontend resources. A searchable custom card needs JavaScript registered as a dashboard resource and a `window.customCards` entry; installing this app alone cannot register that frontend resource. See [Home Assistant's custom card documentation](https://developers.home-assistant.io/docs/frontend/custom-ui/custom-card/) and [resource registration instructions](https://developers.home-assistant.io/docs/frontend/custom-ui/registering-resources/).
@@ -96,5 +98,4 @@ The production image copies only `app/`; automated unit tests are in the reposit
 python -m unittest discover -v
 ```
 
-Dashboard YAML is an optional view example, not an automatically installed custom card. Installing the app publishes entities; it does not change dashboard storage or add cards to existing views.
-
+Dashboard YAML is an optional view example; installing the app does not change dashboard storage or add cards to existing views. The HACS-installed card is available separately through the dashboard card picker.
