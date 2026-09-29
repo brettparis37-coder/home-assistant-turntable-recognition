@@ -5,6 +5,30 @@ class TurntableNowPlayingCard extends HTMLElement {
   constructor() {
     super();
     this.attachShadow({ mode: "open" });
+    this._states = null;
+    this._unsubscribeStates = null;
+  }
+
+  connectedCallback() {
+    const event = new CustomEvent("context-request", {
+      bubbles: true,
+      composed: true,
+      cancelable: true,
+    });
+    event.context = "states";
+    event.subscribe = true;
+    event.callback = (states, unsubscribe) => {
+      this._states = states;
+      if (typeof unsubscribe === "function") this._unsubscribeStates = unsubscribe;
+      this._render();
+    };
+    this.dispatchEvent(event);
+    this._render();
+  }
+
+  disconnectedCallback() {
+    this._unsubscribeStates?.();
+    this._unsubscribeStates = null;
   }
 
   setConfig(config) {
@@ -30,7 +54,7 @@ class TurntableNowPlayingCard extends HTMLElement {
   _render() {
     if (!this.shadowRoot || !this._config) return;
 
-    const entity = this._hass?.states?.[this._config.entity];
+    const entity = this._states?.[this._config.entity] || this._hass?.states?.[this._config.entity];
     const attributes = entity?.attributes || {};
     const title = attributes.title || (entity?.state !== "Nothing playing" ? entity?.state : "") || "";
     const artist = attributes.artist || "";
