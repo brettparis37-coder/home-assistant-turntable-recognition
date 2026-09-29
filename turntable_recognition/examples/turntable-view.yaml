@@ -4,6 +4,8 @@ icon: mdi:record-player
 cards:
   - type: custom:turntable-now-playing-card
     entity: sensor.turntable_now_playing
+  - type: custom:turntable-recognition-diagnostics-card
+    entity_prefix: turntable
   - type: entities
     title: Now playing and recent plays
     entities:
@@ -33,3 +35,4 @@ cards:
     entities:
       - entity: sensor.turntable_audd_usage
       - entity: sensor.turntable_audd_requests_remaining
+
