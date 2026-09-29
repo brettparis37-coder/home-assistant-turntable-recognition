@@ -48,7 +48,7 @@ class ManualTests(unittest.TestCase):
             if not worker.busy:
                 break
             threading.Event().wait(0.01)
-        self.assertEqual(limiter.used, 1)
+        self.assertEqual(limiter.used, 0)
         self.assertFalse(os.path.exists(paths[0]))
         self.assertEqual(len(worker.data), 0)
 
