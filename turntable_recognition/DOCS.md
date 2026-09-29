@@ -72,13 +72,13 @@ With the default `entity_prefix: turntable`, the app publishes:
 
 Add built-in **Entities**, **Tile**, or **History graph** cards and search these names. The example view in [`examples/turntable-view.yaml`](examples/turntable-view.yaml) is optional and must be added to a dashboard by the user.
 
-For a dedicated album-art card, install **Turntable Now Playing Card** from this same GitHub repository through HACS as a **Dashboard** custom repository. Then use **Edit dashboard → Add card** and search for **Turntable Now Playing**. The card defaults to `sensor.turntable_now_playing` and displays its artwork, title, artist, album, and year. See the repository [README](../README.md) for HACS installation steps.
+For dedicated cards, install **Turntable Dashboard Cards** from this same GitHub repository through HACS as a **Dashboard** custom repository. Then use **Edit dashboard → Add card** and search for **Turntable Now Playing** or **Turntable Recognition Diagnostics**. The first displays album artwork and track details; the second shows input level, thresholds, playback and recognition state, next check, last attempt/error, and AudD usage. Both default to the `turntable` entity prefix. See the repository [README](../README.md) for HACS installation steps.
 
 ### Why the app YAML does not add a custom card to the picker
 
 An app's `config.yaml` configures the app container and its options. Lovelace card types are separate frontend resources. A searchable custom card needs JavaScript registered as a dashboard resource and a `window.customCards` entry; installing this app alone cannot register that frontend resource. See [Home Assistant's custom card documentation](https://developers.home-assistant.io/docs/frontend/custom-ui/custom-card/) and [resource registration instructions](https://developers.home-assistant.io/docs/frontend/custom-ui/registering-resources/).
 
-The no-extra-install option is to use the built-in cards above. To get a dedicated **Turntable Recognition** card or dashboard strategy in the picker, this project would need a separately installed custom integration/frontend resource (commonly distributed through HACS). The app repository can provide those files, but the app install itself cannot make Home Assistant load them.
+The repository provides these custom cards through HACS. The app install alone creates entities but does not load frontend resources; install the HACS dashboard package once to use the cards.
 
 ## USB source selection
 
@@ -99,3 +99,4 @@ python -m unittest discover -v
 ```
 
 Dashboard YAML is an optional view example; installing the app does not change dashboard storage or add cards to existing views. The HACS-installed card is available separately through the dashboard card picker.
+
