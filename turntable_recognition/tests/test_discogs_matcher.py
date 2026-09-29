@@ -23,7 +23,7 @@ class MatcherTests(unittest.TestCase):
                     cover_image TEXT, thumb TEXT);
                 CREATE TABLE discogs_masters(master_id INTEGER, year INTEGER, artwork_url TEXT, thumb_url TEXT);
                 CREATE TABLE discogs_tracks(track_key TEXT, release_id INTEGER, sequence INTEGER,
-                    title TEXT, position TEXT, track_type TEXT);
+                    title TEXT, position TEXT, track_type TEXT, duration_ms INTEGER);
                 CREATE TABLE discogs_release_artists(release_id INTEGER, artist_key INTEGER);
                 CREATE TABLE discogs_artists(artist_key INTEGER, name TEXT);
                 CREATE TABLE discogs_track_credits(track_key TEXT, artist_key INTEGER);
@@ -34,10 +34,10 @@ class MatcherTests(unittest.TestCase):
                 INSERT INTO discogs_masters VALUES (100, 1977, 'https://master/art.jpg', 'https://master/thumb.jpg');
                 INSERT INTO discogs_masters VALUES (101, 1979, 'https://other/master.jpg', '');
                 INSERT INTO discogs_masters VALUES (99, 1969, 'https://unowned/master.jpg', '');
-                INSERT INTO discogs_tracks VALUES ('10:1', 10, 1, 'A Great Song!', 'A1', 'track');
-                INSERT INTO discogs_tracks VALUES ('10:2', 10, 2, 'A Great Song!', 'A2', 'track');
-                INSERT INTO discogs_tracks VALUES ('11:1', 11, 1, 'A Great Song!', 'A1', 'track');
-                INSERT INTO discogs_tracks VALUES ('9:1', 9, 1, 'A Great Song!', 'A1', 'track');
+                INSERT INTO discogs_tracks VALUES ('10:1', 10, 1, 'A Great Song!', 'A1', 'track', 205000);
+                INSERT INTO discogs_tracks VALUES ('10:2', 10, 2, 'A Great Song!', 'A2', 'track', 205000);
+                INSERT INTO discogs_tracks VALUES ('11:1', 11, 1, 'A Great Song!', 'A1', 'track', 200000);
+                INSERT INTO discogs_tracks VALUES ('9:1', 9, 1, 'A Great Song!', 'A1', 'track', 200000);
                 INSERT INTO discogs_release_artists VALUES (10, 1), (11, 2);
                 INSERT INTO discogs_artists VALUES (1, 'The Artist'), (2, 'Different Artist');
                 INSERT INTO discogs_track_credits VALUES ('10:1', 1), ('10:2', 1), ('11:1', 2), ('9:1', 1);
@@ -55,6 +55,7 @@ class MatcherTests(unittest.TestCase):
         self.assertEqual(match["master_year"], 1977)
         self.assertEqual(match["release_artwork_url"], "https://release/art.jpg")
         self.assertEqual(match["master_artwork_url"], "https://master/art.jpg")
+        self.assertEqual(match["duration_ms"], 205000)
 
     def test_no_track_match_returns_none(self):
         matcher = DiscogsMatcher(str(self.path))
@@ -74,12 +75,14 @@ class MatcherTests(unittest.TestCase):
     def test_apply_match_keeps_both_values_and_selects_configured_defaults(self):
         track = SimpleNamespace(year="1985", title="Provider title", artist="Provider artist",
                                 album="Provider album", artwork_url="provider.jpg",
-                                artwork_source="provider", selection_reason="provider")
+                                artwork_source="provider", selection_reason="provider",
+                                duration_seconds=None, timing_source="", position_seconds=None)
         apply_match(track, {
             "release_id": 10, "master_id": 100, "album": "Owned Album",
             "track_title": "A Great Song!", "track_artists": "The Artist",
             "release_year": 1978, "master_year": 1977,
             "release_artwork_url": "release.jpg", "master_artwork_url": "master.jpg",
+            "duration_ms": 205000,
         }, {"discogs_year_preference": "master", "discogs_artwork_preference": "release"})
         self.assertEqual(track.release_year, "1978")
         self.assertEqual(track.master_year, "1977")
@@ -88,6 +91,13 @@ class MatcherTests(unittest.TestCase):
         self.assertEqual(track.artwork_source, "discogs_release")
         self.assertEqual(track.title, "A Great Song!")
         self.assertEqual(track.artist, "The Artist")
+        self.assertEqual(track.duration_seconds, 205)
+        self.assertEqual(track.timing_source, "discogs_collection")
+        track.duration_seconds = 180
+        track.timing_source = "spotify"
+        apply_match(track, {"duration_ms": 205000}, {})
+        self.assertEqual(track.duration_seconds, 180)
+        self.assertEqual(track.timing_source, "spotify")
 
     def test_audd_match_uses_local_discogs_before_catalog_fallback(self):
         fake_requests = types.ModuleType("requests")
