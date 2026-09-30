@@ -1,5 +1,9 @@
 # Unreleased
 
+# 0.14.3
+
+- Fix a corrupted `main.py` upload that prevented the app from starting.
+
 # 0.14.2
 
 - Add a HACS Turntable Song Facts card that rotates through cached Discogs track facts every 15 seconds, with source links and an empty state when a track has no facts.
