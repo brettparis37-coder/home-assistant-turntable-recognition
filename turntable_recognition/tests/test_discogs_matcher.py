@@ -77,6 +77,32 @@ class MatcherTests(unittest.TestCase):
         matcher = DiscogsMatcher(str(self.path))
         self.assertEqual(matcher.average_duration_seconds(10), 205)
 
+    def test_facts_for_track_returns_only_facts_for_exact_release_track(self):
+        db = sqlite3.connect(self.path)
+        db.executescript("""
+            CREATE TABLE discogs_track_fact_sets (
+                track_key TEXT PRIMARY KEY, release_id INTEGER, track_sequence INTEGER,
+                status TEXT
+            );
+            CREATE TABLE discogs_track_facts (
+                track_key TEXT, fact_order INTEGER, fact_text TEXT,
+                source_title TEXT, source_url TEXT, source_publisher TEXT
+            );
+            INSERT INTO discogs_track_fact_sets VALUES
+                ('10:1', 10, 1, 'needs_review'), ('10:2', 10, 2, 'pending');
+            INSERT INTO discogs_track_facts VALUES
+                ('10:1', 1, 'A two-sentence fact.', 'Source', 'https://example.com', 'Publisher'),
+                ('10:2', 1, 'A different track fact.', 'Source', 'https://example.com', 'Publisher');
+        """)
+        db.close()
+
+        matcher = DiscogsMatcher(str(self.path))
+        facts = matcher.facts_for_track(10, 1)
+        self.assertEqual(len(facts), 1)
+        self.assertEqual(facts[0]["fact_text"], "A two-sentence fact.")
+        self.assertEqual(facts[0]["fact_set_status"], "needs_review")
+        self.assertEqual(matcher.facts_for_track(10, 2), [])
+
     def test_fuzzy_title_fallback_matches_minor_recognition_typo(self):
         matcher = DiscogsMatcher(str(self.path))
         match = matcher.match("The Artist", "A Great Sng")

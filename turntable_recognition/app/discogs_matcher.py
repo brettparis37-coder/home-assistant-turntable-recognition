@@ -211,6 +211,36 @@ class DiscogsMatcher:
         result["_match_method"] = selected_method
         return result
 
+    def facts_for_track(self, release_id: int | str, sequence: int | str) -> list[dict]:
+        """Return reviewed or reviewable facts for an exact Discogs release track."""
+        if not release_id or sequence in (None, "") or not self.database_path.is_file():
+            return []
+        uri = self.database_path.resolve().as_uri() + "?mode=ro"
+        connection = None
+        try:
+            connection = sqlite3.connect(uri, uri=True, timeout=3)
+            connection.row_factory = sqlite3.Row
+            connection.execute("PRAGMA query_only = ON")
+            rows = connection.execute(
+                """SELECT f.fact_order, f.fact_text, f.source_title, f.source_url,
+                          f.source_publisher, s.status AS fact_set_status
+                     FROM discogs_track_fact_sets s
+                     JOIN discogs_track_facts f USING (track_key)
+                    WHERE s.release_id = ? AND s.track_sequence = ?
+                      AND s.status IN ('complete', 'needs_review')
+                    ORDER BY f.fact_order
+                    LIMIT 5""",
+                (release_id, sequence),
+            ).fetchall()
+            return [dict(row) for row in rows]
+        except (sqlite3.Error, OSError):
+            # Facts are optional enrichment: a missing/older schema must not
+            # interrupt recognition or prevent publishing the current track.
+            return []
+        finally:
+            if connection is not None:
+                connection.close()
+
     def next_track(self, release_id: int | str, sequence: int | str) -> dict | None:
         """Return the next playable track on this exact Discogs release."""
         if not release_id or sequence in (None, "") or not self.database_path.is_file():

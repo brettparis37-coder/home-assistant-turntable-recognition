@@ -168,6 +168,178 @@ if (!window.customCards.some((card) => card.type === CARD_TYPE)) {
   });
 }
 
+const FACTS_CARD_TYPE = "turntable-song-facts-card";
+
+class TurntableSongFactsCard extends HTMLElement {
+  constructor() {
+    super();
+    this.attachShadow({ mode: "open" });
+    this._factIndex = 0;
+    this._timer = null;
+  }
+
+  connectedCallback() {
+    this._startTimer();
+    this._render();
+  }
+
+  disconnectedCallback() {
+    if (this._timer) clearInterval(this._timer);
+    this._timer = null;
+  }
+
+  setConfig(config) {
+    const interval = Number(config?.interval_seconds ?? 15);
+    this._config = {
+      entity: config?.entity || "sensor.turntable_now_playing",
+      intervalSeconds: Number.isFinite(interval) ? Math.max(5, Math.min(600, interval)) : 15,
+    };
+    this._startTimer();
+    this._render();
+  }
+
+  set hass(hass) {
+    this._hass = hass;
+    this._render();
+  }
+
+  static getStubConfig() {
+    return { entity: "sensor.turntable_now_playing", interval_seconds: 15 };
+  }
+
+  getCardSize() {
+    return 3;
+  }
+
+  _startTimer() {
+    if (this._timer) clearInterval(this._timer);
+    this._timer = null;
+    if (!this.isConnected || !this._config) return;
+    this._timer = setInterval(() => {
+      const entity = this._hass?.states?.[this._config.entity];
+      const facts = entity?.attributes?.track_facts;
+      if (Array.isArray(facts) && facts.length > 1) {
+        this._factIndex = (this._factIndex + 1) % facts.length;
+        this._render();
+      }
+    }, this._config.intervalSeconds * 1000);
+  }
+
+  _render() {
+    if (!this.shadowRoot || !this._config) return;
+    const entity = this._hass?.states?.[this._config.entity];
+    const attributes = entity?.attributes || {};
+    const title = attributes.title || entity?.state || "";
+    const artist = attributes.artist || "";
+    const idle = !entity || !title || ["unknown", "unavailable", "Nothing playing"].includes(entity.state);
+    const facts = Array.isArray(attributes.track_facts) ? attributes.track_facts : [];
+    const playKey = JSON.stringify([
+      entity?.state, title, artist, attributes.album, attributes.discogs_release_id,
+      attributes.discogs_track_sequence, attributes.recognized_at, attributes.predicted_at,
+      facts.map((fact) => fact?.fact_text || ""),
+    ]);
+    if (playKey !== this._playKey) {
+      this._playKey = playKey;
+      this._factIndex = 0;
+    }
+    const fact = facts.length ? facts[this._factIndex % facts.length] : null;
+    const renderKey = JSON.stringify([playKey, this._factIndex, fact, this._config.intervalSeconds]);
+    if (renderKey === this._renderKey) return;
+    this._renderKey = renderKey;
+
+    this.shadowRoot.innerHTML = `
+      <style>
+        :host { display:block; }
+        ha-card { box-sizing:border-box; min-height:180px; padding:20px 22px; overflow:hidden; }
+        .top { display:flex; justify-content:space-between; align-items:center; gap:12px; margin-bottom:15px; }
+        .eyebrow { color:var(--secondary-text-color); font-size:11px; font-weight:700; letter-spacing:.14em; text-transform:uppercase; }
+        .count { color:var(--secondary-text-color); font-size:12px; font-variant-numeric:tabular-nums; white-space:nowrap; }
+        .track { color:var(--secondary-text-color); font-size:13px; line-height:1.4; margin:-8px 0 14px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+        .fact { border-left:3px solid var(--accent-color, var(--primary-color)); padding:2px 0 2px 15px; font-size:clamp(16px, 2.2vw, 19px); font-weight:500; line-height:1.5; }
+        .empty { border-left:3px solid var(--divider-color); padding:2px 0 2px 15px; color:var(--secondary-text-color); font-size:16px; line-height:1.5; }
+        .footer { display:flex; justify-content:space-between; align-items:center; gap:12px; margin:16px 0 0 18px; min-height:20px; }
+        .sources { display:flex; flex-wrap:wrap; gap:7px 12px; min-width:0; }
+        .sources a { color:var(--secondary-text-color); font-size:12px; text-decoration:none; border-bottom:1px dotted var(--secondary-text-color); }
+        .sources a:hover { color:var(--primary-color); }
+        .status { color:var(--secondary-text-color); font-size:10px; letter-spacing:.08em; text-transform:uppercase; white-space:nowrap; }
+        .dots { display:flex; gap:4px; margin:0 0 0 18px; padding-top:13px; }
+        .dot { width:5px; height:5px; border-radius:50%; background:var(--divider-color); }
+        .dot.active { width:16px; border-radius:5px; background:var(--primary-color); }
+        @media(max-width:420px) { ha-card { padding:16px; } .fact { font-size:16px; } }
+      </style>
+      <ha-card>
+        <div class="top"><div class="eyebrow">Song facts</div><div class="count"></div></div>
+        <div class="track"></div>
+        <div class="fact-slot"></div>
+        <div class="footer"><div class="sources"></div><div class="status"></div></div>
+        <div class="dots" aria-hidden="true"></div>
+      </ha-card>`;
+
+    const root = this.shadowRoot;
+    root.querySelector(".track").textContent = idle ? "Waiting for a recognized track" : `${title}${artist ? ` · ${artist}` : ""}`;
+    root.querySelector(".count").textContent = facts.length ? `${this._factIndex + 1} / ${facts.length}` : "";
+    const slot = root.querySelector(".fact-slot");
+    if (idle) {
+      slot.className = "empty";
+      slot.textContent = "Song facts will appear when a track is recognized.";
+    } else if (!fact?.fact_text) {
+      slot.className = "empty";
+      slot.textContent = "No facts saved for this track yet.";
+    } else {
+      slot.className = "fact";
+      slot.textContent = fact.fact_text;
+    }
+
+    const sourceContainer = root.querySelector(".sources");
+    sourceContainer.replaceChildren();
+    const urls = String(fact?.source_url || "").split(/\s*;\s*/).filter(Boolean);
+    const titles = String(fact?.source_title || "").split(/\s*;\s*/);
+    const publishers = String(fact?.source_publisher || "").split(/\s*;\s*/);
+    urls.forEach((value, index) => {
+      try {
+        const url = new URL(value);
+        if (!["https:", "http:"].includes(url.protocol)) return;
+        const link = document.createElement("a");
+        link.href = url.href;
+        link.target = "_blank";
+        link.rel = "noopener noreferrer";
+        link.textContent = titles[index] || publishers[index] || `Source ${index + 1}`;
+        sourceContainer.append(link);
+      } catch (_) {
+        // Ignore malformed optional source URLs.
+      }
+    });
+    root.querySelector(".status").textContent = fact?.fact_set_status === "needs_review" ? "Research note" : "";
+    const dots = root.querySelector(".dots");
+    dots.replaceChildren();
+    if (!idle && facts.length > 1) {
+      facts.forEach((_entry, index) => {
+        const dot = document.createElement("span");
+        dot.className = `dot${index === this._factIndex ? " active" : ""}`;
+        dots.append(dot);
+      });
+    }
+  }
+}
+
+if (!customElements.get(FACTS_CARD_TYPE)) {
+  customElements.define(FACTS_CARD_TYPE, TurntableSongFactsCard);
+}
+
+if (!window.customCards.some((card) => card.type === FACTS_CARD_TYPE)) {
+  window.customCards.push({
+    type: FACTS_CARD_TYPE,
+    name: "Turntable Song Facts",
+    description: "Rotates through researched facts about the current Discogs track.",
+    preview: false,
+    documentationURL: "https://github.com/brettparis37-coder/home-assistant-turntable-recognition",
+    getEntitySuggestion: (hass, entityId) => {
+      if (!/^sensor\..+_now_playing$/.test(entityId) || !hass.states[entityId]) return null;
+      return { config: { type: `custom:${FACTS_CARD_TYPE}`, entity: entityId, interval_seconds: 15 } };
+    },
+  });
+}
+
 const DIAGNOSTICS_CARD_TYPE = "turntable-recognition-diagnostics-card";
 
 class TurntableRecognitionDiagnosticsCard extends HTMLElement {

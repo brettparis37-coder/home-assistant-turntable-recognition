@@ -4,6 +4,9 @@ icon: mdi:record-player
 cards:
   - type: custom:turntable-now-playing-card
     entity: sensor.turntable_now_playing
+  - type: custom:turntable-song-facts-card
+    entity: sensor.turntable_now_playing
+    interval_seconds: 15
   - type: custom:turntable-recognition-diagnostics-card
     entity_prefix: turntable
   - type: entities

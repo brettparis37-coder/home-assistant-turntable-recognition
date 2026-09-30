@@ -53,6 +53,36 @@ class ArtworkColorTests(unittest.TestCase):
         self.assertEqual(attributes["recognition_status"], "recognized")
         self.assertEqual(attributes["dominant_color"], "#c06020")
 
+    def test_now_playing_publishes_facts_from_discogs_match(self):
+        fake_requests = types.ModuleType("requests")
+        fake_requests.post = None
+        main_path = Path(__file__).resolve().parents[1] / "app" / "main.py"
+        spec = importlib.util.spec_from_file_location("turntable_main_track_facts_test", main_path)
+        main = importlib.util.module_from_spec(spec)
+        with patch.dict(sys.modules, {"requests": fake_requests, spec.name: main}):
+            spec.loader.exec_module(main)
+
+        fact = {"fact_order": 1, "fact_text": "A researched fact.",
+                "source_title": "Source", "source_url": "https://example.com",
+                "source_publisher": "Publisher", "fact_set_status": "needs_review"}
+
+        class FactsMatcher:
+            def facts_for_track(self, release_id, sequence):
+                self.requested = (release_id, sequence)
+                return [fact]
+
+        matcher = FactsMatcher()
+        publisher = main.HomeAssistantPublisher("turntable", discogs_matcher=matcher)
+        track = main.Track(title="Song", artist="Artist", discogs_release_id="123",
+                           discogs_track_sequence=4)
+        with patch.object(publisher, "set_state") as set_state:
+            publisher.publish_track(track, "recognized", 0, 0)
+
+        self.assertEqual(matcher.requested, ("123", 4))
+        _entity, _state, attributes = set_state.call_args_list[0].args
+        self.assertEqual(attributes["track_facts"], [fact])
+        self.assertEqual(attributes["track_facts_count"], 1)
+
     def test_prediction_is_published_as_tentative_now_playing_and_separate_next_sensor(self):
         fake_requests = types.ModuleType("requests")
         fake_requests.post = None
