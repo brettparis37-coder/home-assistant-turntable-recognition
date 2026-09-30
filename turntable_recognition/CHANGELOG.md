@@ -1,5 +1,7 @@
 # Unreleased
 
+# 0.14.2
+
 - Add a HACS Turntable Song Facts card that rotates through cached Discogs track facts every 15 seconds, with source links and an empty state when a track has no facts.
 - Publish up to five facts for the exact matched Discogs release track on `sensor.turntable_now_playing`; missing fact tables or rows do not interrupt recognition.
 
